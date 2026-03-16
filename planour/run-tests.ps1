@@ -1506,6 +1506,399 @@ try {
 Write-Host ""
 Write-Host "---> Tenant Lifecycle (Suspend/Reactivate) tests completed!" -ForegroundColor Cyan
 
+Read-Host "Press Enter to continue to User Management API tests..."
+
+Write-Host ""
+Write-Host "[20/22] Testing User Management API (Keycloak User CRUD)..."
+
+# ── Test 1: List Tenant Users (Berlin Admin) ──
+Write-Host ""
+Write-Host "--> 1. GET: List Tenant Users as Berlin Admin (Expected 200)"
+$usersApiUri = "http://localhost:8080/api/v1/users"
+try {
+    $listUsersResponse = Invoke-RestMethod -Uri $usersApiUri -Method Get -Headers $headers
+    $userCount = $listUsersResponse.Count
+    Write-Host "--> Test Passed: Retrieved $userCount users for tenant_berlin." -ForegroundColor Green
+} catch {
+    Write-Host "Error listing users: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+# ── Test 2: Invite New User (Berlin Admin) ──
+Write-Host ""
+Write-Host "--> 2. POST: Invite New User as Berlin Admin (Expected 201)"
+$invitePayload = @{
+    email = "testuser_$(Get-Random)@example.com"
+    firstName = "Test"
+    lastName = "User"
+} | ConvertTo-Json
+
+$invitedUserId = $null
+try {
+    $inviteResponse = Invoke-RestMethod -Uri "$usersApiUri/invite" -Method Post -Body $invitePayload -ContentType "application/json" -Headers $headers
+    $invitedUserId = $inviteResponse.keycloakUserId
+    Write-Host "--> Test Passed: User invited successfully. ID: $invitedUserId, Status: $($inviteResponse.status)" -ForegroundColor Green
+} catch {
+    $statusCode = $_.Exception.Response.StatusCode.value__
+    Write-Host "Error inviting user (HTTP $statusCode): $($_.Exception.Message)" -ForegroundColor Red
+    if ($_.ErrorDetails) { Write-Host "Details: $($_.ErrorDetails.Message)" -ForegroundColor Red }
+}
+
+# ── Test 3: Invite Duplicate User (Expected 409) ──
+if ($invitedUserId) {
+    Write-Host ""
+    Write-Host "--> 3. POST: Invite Duplicate User (Expected 409 Conflict)"
+    try {
+        $null = Invoke-RestMethod -Uri "$usersApiUri/invite" -Method Post -Body $invitePayload -ContentType "application/json" -Headers $headers
+        Write-Host "Error: Duplicate user was ALLOWED. Test failure!" -ForegroundColor Red
+    } catch {
+        $statusCode = $_.Exception.Response.StatusCode.value__
+        if ($statusCode -eq 409) {
+            Write-Host "--> Test Passed: Duplicate user correctly rejected with 409 Conflict." -ForegroundColor Green
+        } else {
+            Write-Host "--> Failed with unexpected code $statusCode instead of 409." -ForegroundColor Yellow
+        }
+    }
+}
+
+# ── Test 4: Invite User as Employee (Expected 403) ──
+Write-Host ""
+Write-Host "--> 4. POST: Invite User as Munich Employee (Expected 403)"
+try {
+    $null = Invoke-RestMethod -Uri "$usersApiUri/invite" -Method Post -Body $invitePayload -ContentType "application/json" -Headers $munichHeaders
+    Write-Host "Error: Employee was ALLOWED to invite users. Security test failure!" -ForegroundColor Red
+} catch {
+    $statusCode = $_.Exception.Response.StatusCode.value__
+    if ($statusCode -eq 403) {
+        Write-Host "--> Security Test Passed: Employee correctly BLOCKED from inviting users." -ForegroundColor Green
+    } else {
+        Write-Host "--> Failed with unexpected code $statusCode instead of 403." -ForegroundColor Yellow
+    }
+}
+
+# ── Test 5: Invite User with Tenant_Admin Role ──
+Write-Host ""
+Write-Host "--> 5. POST: Invite User with Tenant_Admin Role (Expected 201)"
+$adminInvitePayload = @{
+    email = "admin_$(Get-Random)@example.com"
+    firstName = "Admin"
+    lastName = "Invited"
+    realmRole = "Tenant_Admin"
+} | ConvertTo-Json
+
+$invitedAdminId = $null
+try {
+    $adminInviteResponse = Invoke-RestMethod -Uri "$usersApiUri/invite" -Method Post -Body $adminInvitePayload -ContentType "application/json" -Headers $headers
+    $invitedAdminId = $adminInviteResponse.keycloakUserId
+    Write-Host "--> Test Passed: Admin user invited with role. ID: $invitedAdminId" -ForegroundColor Green
+} catch {
+    Write-Host "Error inviting admin user: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+# ── Test 6: Invite User with SUPER_ADMIN Role (Expected 400/500) ──
+Write-Host ""
+Write-Host "--> 6. POST: Invite User with SUPER_ADMIN Role (Expected rejection)"
+$superAdminInvitePayload = @{
+    email = "hacker_$(Get-Random)@example.com"
+    firstName = "Hacker"
+    lastName = "Test"
+    realmRole = "SUPER_ADMIN"
+} | ConvertTo-Json
+try {
+    $null = Invoke-RestMethod -Uri "$usersApiUri/invite" -Method Post -Body $superAdminInvitePayload -ContentType "application/json" -Headers $headers
+    Write-Host "Error: SUPER_ADMIN role assignment was ALLOWED! Security test failure!" -ForegroundColor Red
+} catch {
+    Write-Host "--> Security Test Passed: SUPER_ADMIN role assignment correctly rejected." -ForegroundColor Green
+}
+
+# ── Test 7: Disable User ──
+if ($invitedUserId) {
+    Write-Host ""
+    Write-Host "--> 7. PUT: Disable Invited User (Expected 204)"
+    try {
+        $null = Invoke-WebRequest -Uri "$usersApiUri/$invitedUserId/disable" -Method Put -Headers $headers
+        Write-Host "--> Test Passed: User disabled successfully." -ForegroundColor Green
+    } catch {
+        Write-Host "Error disabling user: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # ── Test 8: Verify User is Disabled in List ──
+    Write-Host ""
+    Write-Host "--> 8. GET: Verify Disabled User in List"
+    try {
+        $updatedUsers = Invoke-RestMethod -Uri $usersApiUri -Method Get -Headers $headers
+        $disabledUser = $updatedUsers | Where-Object { $_.keycloakUserId -eq $invitedUserId }
+        if ($disabledUser -and $disabledUser.enabled -eq $false) {
+            Write-Host "--> Test Passed: User correctly shows as disabled in list." -ForegroundColor Green
+        } elseif ($disabledUser) {
+            Write-Host "--> Warning: User found but still shows enabled=$($disabledUser.enabled)." -ForegroundColor Yellow
+        } else {
+            Write-Host "--> Warning: User not found in list." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "Error listing users for verification: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # ── Test 9: Enable User ──
+    Write-Host ""
+    Write-Host "--> 9. PUT: Re-enable User (Expected 204)"
+    try {
+        $null = Invoke-WebRequest -Uri "$usersApiUri/$invitedUserId/enable" -Method Put -Headers $headers
+        Write-Host "--> Test Passed: User re-enabled successfully." -ForegroundColor Green
+    } catch {
+        Write-Host "Error enabling user: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # ── Test 10: Reset Password ──
+    Write-Host ""
+    Write-Host "--> 10. POST: Reset Password for User (Expected 204)"
+    try {
+        $null = Invoke-WebRequest -Uri "$usersApiUri/$invitedUserId/reset-password" -Method Post -Headers $headers
+        Write-Host "--> Test Passed: Password reset email triggered successfully." -ForegroundColor Green
+    } catch {
+        Write-Host "Error resetting password: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # ── Test 11: Change Realm Role ──
+    Write-Host ""
+    Write-Host "--> 11. PUT: Change Realm Role to Tenant_Admin (Expected 204)"
+    $changeRolePayload = '{"role":"Tenant_Admin"}'
+    try {
+        $null = Invoke-WebRequest -Uri "$usersApiUri/$invitedUserId/realm-role" -Method Put -Body $changeRolePayload -ContentType "application/json" -Headers $headers
+        Write-Host "--> Test Passed: Realm role changed to Tenant_Admin." -ForegroundColor Green
+    } catch {
+        Write-Host "Error changing realm role: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # ── Test 12: Remove Realm Role ──
+    Write-Host ""
+    Write-Host "--> 12. PUT: Remove Realm Role (Expected 204)"
+    $removeRolePayload = '{"role":null}'
+    try {
+        $null = Invoke-WebRequest -Uri "$usersApiUri/$invitedUserId/realm-role" -Method Put -Body $removeRolePayload -ContentType "application/json" -Headers $headers
+        Write-Host "--> Test Passed: Realm role removed successfully." -ForegroundColor Green
+    } catch {
+        Write-Host "Error removing realm role: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # ── Test 13: Delete User ──
+    Write-Host ""
+    Write-Host "--> 13. DELETE: Delete Invited User (Expected 204)"
+    try {
+        $null = Invoke-WebRequest -Uri "$usersApiUri/$invitedUserId" -Method Delete -Headers $headers
+        Write-Host "--> Test Passed: User deleted successfully." -ForegroundColor Green
+    } catch {
+        Write-Host "Error deleting user: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # ── Test 14: Verify Deleted User Not in List ──
+    Write-Host ""
+    Write-Host "--> 14. GET: Verify Deleted User Not in List"
+    try {
+        $afterDeleteUsers = Invoke-RestMethod -Uri $usersApiUri -Method Get -Headers $headers
+        $deletedUser = $afterDeleteUsers | Where-Object { $_.keycloakUserId -eq $invitedUserId }
+        if (-not $deletedUser) {
+            Write-Host "--> Test Passed: Deleted user no longer appears in list." -ForegroundColor Green
+        } else {
+            Write-Host "--> Error: Deleted user still appears in list!" -ForegroundColor Red
+        }
+    } catch {
+        Write-Host "Error listing users after deletion: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+# Cleanup admin invite
+if ($invitedAdminId) {
+    try {
+        $null = Invoke-WebRequest -Uri "$usersApiUri/$invitedAdminId" -Method Delete -Headers $headers
+        Write-Host "   Cleaned up invited admin user." -ForegroundColor DarkGray
+    } catch {}
+}
+
+Write-Host ""
+Write-Host "---> User Management API tests completed!" -ForegroundColor Cyan
+
+Read-Host "Press Enter to continue to Super Admin & Roles API tests..."
+
+Write-Host ""
+Write-Host "[21/22] Testing Super Admin Endpoints (Tenant Overview & Admin Creation)..."
+
+# ── Test 1: List All Tenants as Super Admin ──
+Write-Host ""
+Write-Host "--> 1. GET: List All Tenants as Super Admin (Expected 200)"
+$tenantsApiUri = "http://localhost:8080/api/v1/tenants"
+try {
+    $tenantsResponse = Invoke-RestMethod -Uri $tenantsApiUri -Method Get -Headers $superAdminHeaders
+    $tenantCount = $tenantsResponse.content.Count
+    if ($null -eq $tenantCount) { $tenantCount = $tenantsResponse.totalElements }
+    Write-Host "--> Test Passed: Retrieved $tenantCount tenants." -ForegroundColor Green
+} catch {
+    Write-Host "Error listing tenants: $($_.Exception.Message)" -ForegroundColor Red
+    if ($_.ErrorDetails) { Write-Host "Details: $($_.ErrorDetails.Message)" -ForegroundColor Red }
+}
+
+# ── Test 2: List All Tenants as Berlin Admin (Expected 403) ──
+Write-Host ""
+Write-Host "--> 2. GET: List All Tenants as Berlin Admin (Expected 403)"
+try {
+    $null = Invoke-RestMethod -Uri $tenantsApiUri -Method Get -Headers $headers
+    Write-Host "Error: Berlin Admin was ALLOWED to list all tenants. Security test failure!" -ForegroundColor Red
+} catch {
+    $statusCode = $_.Exception.Response.StatusCode.value__
+    if ($statusCode -eq 403) {
+        Write-Host "--> Security Test Passed: Berlin Admin correctly BLOCKED from listing all tenants." -ForegroundColor Green
+    } else {
+        Write-Host "--> Failed with unexpected code $statusCode instead of 403." -ForegroundColor Yellow
+    }
+}
+
+# ── Test 3: List Tenant Users as Super Admin ──
+Write-Host ""
+Write-Host "--> 3. GET: List tenant_berlin Users as Super Admin (Expected 200)"
+try {
+    $tenantUsersResponse = Invoke-RestMethod -Uri "$tenantsApiUri/tenant_berlin/users" -Method Get -Headers $superAdminHeaders
+    $tenantUserCount = $tenantUsersResponse.Count
+    Write-Host "--> Test Passed: Retrieved $tenantUserCount users for tenant_berlin via Super Admin endpoint." -ForegroundColor Green
+} catch {
+    Write-Host "Error listing tenant users as Super Admin: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+# ── Test 4: Create Tenant Admin via Super Admin ──
+Write-Host ""
+Write-Host "--> 4. POST: Create Tenant Admin for tenant_berlin as Super Admin (Expected 201)"
+$createAdminPayload = @{
+    email = "superadmin_created_$(Get-Random)@example.com"
+    firstName = "SuperCreated"
+    lastName = "Admin"
+} | ConvertTo-Json
+
+$superCreatedAdminId = $null
+try {
+    $createAdminResponse = Invoke-RestMethod -Uri "$tenantsApiUri/tenant_berlin/admin" -Method Post -Body $createAdminPayload -ContentType "application/json" -Headers $superAdminHeaders
+    $superCreatedAdminId = $createAdminResponse.keycloakUserId
+    Write-Host "--> Test Passed: Tenant Admin created by Super Admin. ID: $superCreatedAdminId" -ForegroundColor Green
+} catch {
+    Write-Host "Error creating Tenant Admin: $($_.Exception.Message)" -ForegroundColor Red
+    if ($_.ErrorDetails) { Write-Host "Details: $($_.ErrorDetails.Message)" -ForegroundColor Red }
+}
+
+# Cleanup super-created admin
+if ($superCreatedAdminId) {
+    try {
+        $null = Invoke-WebRequest -Uri "$usersApiUri/$superCreatedAdminId" -Method Delete -Headers $headers
+        Write-Host "   Cleaned up super-created admin user." -ForegroundColor DarkGray
+    } catch {}
+}
+
+Write-Host ""
+Write-Host "---> Super Admin Endpoints tests completed!" -ForegroundColor Cyan
+
+Read-Host "Press Enter to continue to Dynamic Roles CRUD tests..."
+
+Write-Host ""
+Write-Host "[22/22] Testing Dynamic Roles CRUD (List, Update, Delete)..."
+
+# ── Test 1: List Roles ──
+Write-Host ""
+Write-Host "--> 1. GET: List Dynamic Roles as Berlin Admin (Expected 200)"
+$rolesApiUri = "http://localhost:8080/api/v1/roles"
+$testRoleId = $null
+try {
+    $rolesResponse = Invoke-RestMethod -Uri $rolesApiUri -Method Get -Headers $headers
+    $roleCount = $rolesResponse.content.Count
+    if ($null -eq $roleCount) { $roleCount = $rolesResponse.totalElements }
+    Write-Host "--> Test Passed: Retrieved $roleCount roles." -ForegroundColor Green
+
+    # Pick first role for update/delete tests
+    if ($rolesResponse.content -and $rolesResponse.content.Count -gt 0) {
+        $testRoleId = $rolesResponse.content[0].id
+        Write-Host "   Using role ID $testRoleId for update/delete tests." -ForegroundColor DarkGray
+    }
+} catch {
+    Write-Host "Error listing roles: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+# ── Test 2: Create a Role for Testing ──
+Write-Host ""
+Write-Host "--> 2. POST: Create Test Role for CRUD tests (Expected 201)"
+$testRolePayload = @{
+    name = "TEST_CRUD_ROLE_$(Get-Random)"
+    description = "Role for CRUD testing"
+    permissions = @("READ_PROJECT", "UPDATE_PROJECT")
+} | ConvertTo-Json
+
+try {
+    $createRoleResponse = Invoke-RestMethod -Uri $rolesApiUri -Method Post -Body $testRolePayload -ContentType "application/json" -Headers $headers
+    $testRoleId = $createRoleResponse.id
+    Write-Host "--> Test Passed: Created test role '$($createRoleResponse.name)' with ID $testRoleId." -ForegroundColor Green
+} catch {
+    Write-Host "Error creating test role: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+# ── Test 3: Update Role ──
+if ($testRoleId) {
+    Write-Host ""
+    Write-Host "--> 3. PUT: Update Test Role (Expected 200)"
+    $updateRolePayload = @{
+        name = "UPDATED_ROLE_$(Get-Random)"
+        description = "Updated description"
+        permissions = @("READ_PROJECT", "CREATE_PROJECT", "MANAGE_MEDIA")
+    } | ConvertTo-Json
+
+    try {
+        $updateRoleResponse = Invoke-RestMethod -Uri "$rolesApiUri/$testRoleId" -Method Put -Body $updateRolePayload -ContentType "application/json" -Headers $headers
+        if ($updateRoleResponse.permissions.Count -eq 3) {
+            Write-Host "--> Test Passed: Role updated. New name: '$($updateRoleResponse.name)', Permissions: $($updateRoleResponse.permissions.Count)." -ForegroundColor Green
+        } else {
+            Write-Host "--> Warning: Role updated but permission count mismatch." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "Error updating role: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # ── Test 4: Delete Role ──
+    Write-Host ""
+    Write-Host "--> 4. DELETE: Delete Test Role (Expected 204)"
+    try {
+        $null = Invoke-WebRequest -Uri "$rolesApiUri/$testRoleId" -Method Delete -Headers $headers
+        Write-Host "--> Test Passed: Role deleted successfully." -ForegroundColor Green
+    } catch {
+        Write-Host "Error deleting role: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # ── Test 5: Verify Deleted Role Not in List ──
+    Write-Host ""
+    Write-Host "--> 5. GET: Verify Deleted Role Not in List"
+    try {
+        $rolesAfterDelete = Invoke-RestMethod -Uri $rolesApiUri -Method Get -Headers $headers
+        $deletedRole = $rolesAfterDelete.content | Where-Object { $_.id -eq $testRoleId }
+        if (-not $deletedRole) {
+            Write-Host "--> Test Passed: Deleted role no longer appears in list." -ForegroundColor Green
+        } else {
+            Write-Host "--> Error: Deleted role still appears in list!" -ForegroundColor Red
+        }
+    } catch {
+        Write-Host "Error listing roles after deletion: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+# ── Test 6: Update Role as Employee (Expected 403) ──
+Write-Host ""
+Write-Host "--> 6. PUT: Update Role as Munich Employee (Expected 403)"
+try {
+    $null = Invoke-RestMethod -Uri "$rolesApiUri/00000000-0000-0000-0000-000000000000" -Method Put -Body $testRolePayload -ContentType "application/json" -Headers $munichHeaders
+    Write-Host "Error: Employee was ALLOWED to update role. Security test failure!" -ForegroundColor Red
+} catch {
+    $statusCode = $_.Exception.Response.StatusCode.value__
+    if ($statusCode -eq 403) {
+        Write-Host "--> Security Test Passed: Employee correctly BLOCKED from updating roles." -ForegroundColor Green
+    } else {
+        Write-Host "--> Got code $statusCode (may also be valid for non-existent role)." -ForegroundColor DarkGray
+    }
+}
+
+Write-Host ""
+Write-Host "---> Dynamic Roles CRUD tests completed!" -ForegroundColor Cyan
+
 Read-Host "Press Enter to finish all tests..."
 
 Write-Host ""

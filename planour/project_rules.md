@@ -238,7 +238,12 @@ com.blacknour.planourrestapi
 │   │   ├── KeycloakAdminConfig.java          ← Keycloak Bean (Client Credentials Grant)
 │   │   ├── KeycloakTenantManagementService.java ← enforce/revoke 2FA + suspend/reactivate مستخدمي المستأجر
 │   │   ├── TwoFactorPolicyEventListener.java ← @Async @EventListener (2FA)
-│   │   └── TenantLifecycleEventListener.java ← @Async @EventListener (Suspend/Reactivate)
+│   │   ├── TenantLifecycleEventListener.java ← @Async @EventListener (Suspend/Reactivate)
+│   │   ├── KeycloakUserService.java           ← ✅ invite + listTenantUsers عبر Keycloak Admin API
+│   │   ├── UserManagementController.java      ← ✅ POST /invite + GET /users (Tenant_Admin)
+│   │   ├── UserAlreadyExistsException.java    ← ✅ 409 Conflict
+│   │   ├── KeycloakOperationException.java    ← ✅ 502 Bad Gateway
+│   │   └── dto/                               ← ✅ UserInviteDto, UserInviteResponseDto, KeycloakUserResponseDto
 │   └── storage/             ← (منجز ✅) MinIO Object Storage + Image Processing
 │       ├── StorageService.java             ← واجهة مجردة (MultipartFile + InputStream overloads)
 │       ├── MinioStorageService.java        ← تنفيذ MinIO (S3 API) — كلا التوقيعين
@@ -571,6 +576,33 @@ test_job  → mvn test (Docker-in-Docker for Testcontainers)
 /api/v1/tenants/{tenantId}/reactivate             ← PUT (SUPER_ADMIN فقط — إعادة تفعيل المستأجر + تفعيل مستخدمي Keycloak)
 ```
 
+### 14.5. واجهات API لإدارة المستخدمين (User Management API Endpoints) ✅
+
+```
+/api/v1/users/invite                               ← POST (Tenant_Admin — دعوة مستخدم جديد عبر Keycloak Admin API + فحص Quota)
+/api/v1/users                                      ← GET (Tenant_Admin — عرض مستخدمي المستأجر من Keycloak مع الأدوار)
+/api/v1/users/{keycloakUserId}/disable             ← PUT (Tenant_Admin — تعطيل مستخدم + إنهاء جلساته)
+/api/v1/users/{keycloakUserId}/enable              ← PUT (Tenant_Admin — تفعيل مستخدم معطل)
+/api/v1/users/{keycloakUserId}                     ← DELETE (Tenant_Admin — حذف مستخدم + تحرير Quota)
+/api/v1/users/{keycloakUserId}/reset-password      ← POST (Tenant_Admin — إرسال بريد إعادة تعيين كلمة المرور)
+/api/v1/users/{keycloakUserId}/realm-role          ← PUT (Tenant_Admin — تغيير Realm Role لمستخدم)
+
+-- Super Admin endpoints
+/api/v1/tenants                                    ← GET (SUPER_ADMIN — عرض جميع المستأجرين مع Pagination)
+/api/v1/tenants/{tenantId}/users                   ← GET (SUPER_ADMIN — عرض مستخدمي أي مستأجر)
+/api/v1/tenants/{tenantId}/admin                   ← POST (SUPER_ADMIN — إنشاء Tenant_Admin لمستأجر)
+```
+
+### 14.6. واجهات API للأدوار الديناميكية (Dynamic Roles API Endpoints) — محدّث ✅
+
+```
+/api/v1/roles                                      ← POST (Tenant_Admin — إنشاء دور ديناميكي جديد) [موجود سابقاً]
+/api/v1/roles                                      ← GET (Tenant_Admin — عرض جميع الأدوار مع Pagination) [جديد]
+/api/v1/roles/{roleId}                             ← PUT (Tenant_Admin — تحديث دور ديناميكي) [جديد]
+/api/v1/roles/{roleId}                             ← DELETE (Tenant_Admin — حذف دور + جميع التعيينات) [جديد]
+/api/v1/resources/{resourceId}/assignments         ← POST (Tenant_Admin — إسناد دور لمستخدم على مورد) [موجود سابقاً]
+```
+
 ---
 
 ## 15. ملخص حالة الإنجاز (Project Status Summary)
@@ -591,6 +623,7 @@ test_job  → mvn test (Docker-in-Docker for Testcontainers)
 ██████████████████████████████ إعدادات المستأجر (TenantSettings + 2FA)  ✅ 100%
 ██████████████████████████████ حصص الموارد (Tenant Quotas)              ✅ 100%
 ██████████████████████████████ دورة حياة المستأجر (Tenant Lifecycle)     ✅ 100%
+██████████████████████████████ إدارة المستخدمين (User Management)       ✅ 100% (Sprint 1-4 منجز)
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ الواجهة الأمامية (Frontend)              🔲 0%   ← التالي
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ بوابة الشفافية (Transparency)            🔲 0%   ← مؤجل
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ بوابة المشاركة (Participation)           🔲 0%   ← مؤجل

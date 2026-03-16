@@ -81,10 +81,12 @@ Alle Fehler folgen diesem JSON-Format:
 | HTTP-Status | Bedeutung | Typischer Auslöser |
 |-------------|-----------|-------------------|
 | `400` | Bad Request | Validierungsfehler (`@NotBlank`, `@NotNull`) |
-| `403` | Forbidden | Fehlende Berechtigung oder suspendierter Mandant |
+| `401` | Unauthorized | Kein oder ungültiges JWT-Token |
+| `403` | Forbidden | Fehlende Berechtigung, suspendierter Mandant, oder Benutzer gehört nicht zum Mandanten |
 | `404` | Not Found | Ressource/Mandant nicht gefunden |
-| `409` | Conflict | Kontingent überschritten (`QuotaExceededException`) |
+| `409` | Conflict | Kontingent überschritten oder Benutzer existiert bereits |
 | `500` | Internal Server Error | Unerwarteter Serverfehler |
+| `502` | Bad Gateway | Keycloak-Verbindungsfehler |
 | `503` | Service Unavailable | MinIO/Storage nicht erreichbar |
 
 ---
@@ -1058,9 +1060,190 @@ Content-Type: application/json
 
 ---
 
-## 17. Rollen & Berechtigungen
+## 17. Benutzerverwaltung (Tenant_Admin)
 
-### 17.1 Dynamische Rolle erstellen
+### 17.1 Mandantenbenutzer auflisten
+
+```
+GET {{base_url}}/users
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+```
+
+**Erwartete Antwort:** `200 OK`
+```json
+[
+  {
+    "keycloakUserId": "uuid",
+    "username": "user@example.com",
+    "email": "user@example.com",
+    "firstName": "Max",
+    "lastName": "Mustermann",
+    "enabled": true,
+    "emailVerified": true,
+    "realmRoles": ["Tenant_Admin"],
+    "createdTimestamp": 1710547200000
+  }
+]
+```
+
+**Prüfpunkte:**
+- [ ] Nur Benutzer des eigenen Mandanten werden angezeigt
+- [ ] `realmRoles` enthält die korrekten Rollen
+- [ ] Employee-Rolle → `403 Forbidden`
+
+---
+
+### 17.2 Benutzer einladen
+
+```
+POST {{base_url}}/users/invite
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+Content-Type: application/json
+
+{
+  "email": "neuer.benutzer@berlin.de",
+  "firstName": "Neuer",
+  "lastName": "Benutzer",
+  "realmRole": null
+}
+```
+
+**Erwartete Antwort:** `201 Created`
+```json
+{
+  "keycloakUserId": "uuid",
+  "email": "neuer.benutzer@berlin.de",
+  "status": "PENDING_VERIFICATION"
+}
+```
+
+**Prüfpunkte:**
+- [ ] **Keycloak:** Neuer Benutzer mit `tenant_id`-Attribut erstellt
+- [ ] **DB (public.tenant_quotas):** `used_users` um 1 erhöht
+- [ ] Benutzer hat `requiredActions: ["UPDATE_PASSWORD", "VERIFY_EMAIL"]`
+- [ ] Doppelte E-Mail → `409 Conflict`
+- [ ] Kontingent erschöpft → `409 Conflict`
+- [ ] Employee-Rolle → `403 Forbidden`
+
+> **Variable speichern:** `{{invited_user_id}}` aus `keycloakUserId`
+
+---
+
+### 17.3 Benutzer mit Rolle einladen
+
+```
+POST {{base_url}}/users/invite
+Content-Type: application/json
+
+{
+  "email": "admin@berlin.de",
+  "firstName": "Admin",
+  "lastName": "Berlin",
+  "realmRole": "Tenant_Admin"
+}
+```
+
+**Prüfpunkte:**
+- [ ] Benutzer erhält `Tenant_Admin`-Rolle in Keycloak
+- [ ] `realmRole = "SUPER_ADMIN"` → Wird abgelehnt (Privilege Escalation Protection)
+
+---
+
+### 17.4 Benutzer deaktivieren
+
+```
+PUT {{base_url}}/users/{{invited_user_id}}/disable
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+```
+
+**Erwartete Antwort:** `204 No Content`
+
+**Prüfpunkte:**
+- [ ] **Keycloak:** Benutzer `enabled = false`
+- [ ] Alle aktiven Sitzungen des Benutzers werden beendet
+- [ ] Benutzer eines anderen Mandanten → `403 Forbidden`
+
+---
+
+### 17.5 Benutzer aktivieren
+
+```
+PUT {{base_url}}/users/{{invited_user_id}}/enable
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+```
+
+**Erwartete Antwort:** `204 No Content`
+
+**Prüfpunkte:**
+- [ ] **Keycloak:** Benutzer `enabled = true`
+- [ ] Benutzer kann sich wieder anmelden
+
+---
+
+### 17.6 Passwort zurücksetzen
+
+```
+POST {{base_url}}/users/{{invited_user_id}}/reset-password
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+```
+
+**Erwartete Antwort:** `204 No Content`
+
+**Prüfpunkte:**
+- [ ] **Keycloak:** E-Mail zur Passwortzurücksetzung wird an den Benutzer gesendet
+- [ ] Benutzer eines anderen Mandanten → `403 Forbidden`
+
+---
+
+### 17.7 Realm-Rolle ändern
+
+```
+PUT {{base_url}}/users/{{invited_user_id}}/realm-role
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+Content-Type: application/json
+
+{
+  "role": "Tenant_Admin"
+}
+```
+
+**Erwartete Antwort:** `204 No Content`
+
+**Prüfpunkte:**
+- [ ] **Keycloak:** Alte Rolle entfernt, neue Rolle zugewiesen
+- [ ] `"role": null` → Alle zuweisbaren Rollen werden entfernt
+- [ ] `"role": "SUPER_ADMIN"` → `400 Bad Request` (nicht zuweisbar)
+- [ ] Benutzer eines anderen Mandanten → `403 Forbidden`
+
+---
+
+### 17.8 Benutzer löschen
+
+```
+DELETE {{base_url}}/users/{{invited_user_id}}
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+```
+
+**Erwartete Antwort:** `204 No Content`
+
+**Prüfpunkte:**
+- [ ] **Keycloak:** Benutzer vollständig gelöscht
+- [ ] **DB (public.tenant_quotas):** `used_users` um 1 verringert
+- [ ] Benutzer eines anderen Mandanten → `403 Forbidden`
+- [ ] Erneuter Abruf → Benutzer erscheint nicht mehr in der Liste
+
+---
+
+## 18. Rollen & Berechtigungen (Dynamische Rollen)
+
+### 18.1 Dynamische Rolle erstellen
 
 ```
 POST {{base_url}}/roles
@@ -1085,7 +1268,63 @@ Content-Type: application/json
 
 ---
 
-### 17.2 Rolle einer Ressource zuweisen
+### 18.2 Alle Rollen auflisten
+
+```
+GET {{base_url}}/roles?page=0&size=20
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+```
+
+**Erwartete Antwort:** `200 OK` (Paginiert)
+
+**Prüfpunkte:**
+- [ ] Nur Rollen des eigenen Mandanten
+- [ ] `permissions`-Liste korrekt pro Rolle
+
+---
+
+### 18.3 Rolle aktualisieren
+
+```
+PUT {{base_url}}/roles/{{role_id}}
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+Content-Type: application/json
+
+{
+  "name": "Senior Projektmanager",
+  "description": "Erweiterte Rechte",
+  "permissions": ["READ_PROJECT", "UPDATE_PROJECT", "CREATE_PROJECT", "ASSIGN_USERS", "DELETE_PROJECT", "MANAGE_MEDIA"]
+}
+```
+
+**Erwartete Antwort:** `200 OK`
+
+**Prüfpunkte:**
+- [ ] Name, Beschreibung und Berechtigungen aktualisiert
+- [ ] Employee-Rolle → `403 Forbidden`
+
+---
+
+### 18.4 Rolle löschen
+
+```
+DELETE {{base_url}}/roles/{{role_id}}
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
+```
+
+**Erwartete Antwort:** `204 No Content`
+
+**Prüfpunkte:**
+- [ ] **DB (dynamic_roles):** Eintrag gelöscht
+- [ ] **DB (role_assignments):** Alle Zuweisungen dieser Rolle werden ebenfalls gelöscht
+- [ ] Erneuter Abruf → Rolle erscheint nicht mehr
+
+---
+
+### 18.5 Rolle einer Ressource zuweisen
 
 ```
 POST {{base_url}}/resources/{{project_id}}/assignments
@@ -1108,9 +1347,80 @@ Content-Type: application/json
 
 ---
 
-## 18. Übergreifende Prüfungen
+## 19. Super-Admin Endpunkte
 
-### 18.1 Tenant-Isolation (KRITISCH)
+### 19.1 Alle Mandanten auflisten
+
+```
+GET {{base_url}}/tenants?page=0&size=20
+Authorization: Bearer {{token_super_admin}}
+```
+
+**Erwartete Antwort:** `200 OK` (Paginiert)
+```json
+{
+  "content": [
+    {
+      "id": "tenant_berlin",
+      "name": "Stadt Berlin",
+      "status": "ACTIVE",
+      "createdAt": "...",
+      "deactivatedAt": null
+    }
+  ],
+  "totalElements": 2
+}
+```
+
+**Prüfpunkte:**
+- [ ] Alle registrierten Mandanten werden angezeigt
+- [ ] Tenant_Admin → `403 Forbidden`
+- [ ] Paginierung funktioniert
+
+---
+
+### 19.2 Benutzer eines Mandanten auflisten (Super-Admin)
+
+```
+GET {{base_url}}/tenants/{{tenant_id}}/users
+Authorization: Bearer {{token_super_admin}}
+```
+
+**Erwartete Antwort:** `200 OK` — Liste aller Keycloak-Benutzer des angegebenen Mandanten.
+
+**Prüfpunkte:**
+- [ ] Super-Admin kann Benutzer jedes Mandanten einsehen
+- [ ] Tenant_Admin → `403 Forbidden`
+
+---
+
+### 19.3 Mandanten-Admin erstellen (Super-Admin)
+
+```
+POST {{base_url}}/tenants/{{tenant_id}}/admin
+Authorization: Bearer {{token_super_admin}}
+Content-Type: application/json
+
+{
+  "email": "admin@berlin.de",
+  "firstName": "Neuer",
+  "lastName": "Admin"
+}
+```
+
+**Erwartete Antwort:** `201 Created`
+
+**Prüfpunkte:**
+- [ ] **Keycloak:** Benutzer mit `Tenant_Admin`-Rolle und `tenant_id`-Attribut erstellt
+- [ ] **DB (public.tenant_quotas):** `used_users` um 1 erhöht
+- [ ] Doppelte E-Mail → `409 Conflict`
+- [ ] Tenant_Admin → `403 Forbidden`
+
+---
+
+## 20. Übergreifende Prüfungen
+
+### 20.1 Tenant-Isolation (KRITISCH)
 
 | Test | Erwartetes Ergebnis |
 |------|-------------------|
@@ -1120,7 +1430,7 @@ Content-Type: application/json
 | Anfrage mit nicht existierendem `X-Tenant-ID` | `404 Not Found` |
 | Anfrage mit suspendiertem `X-Tenant-ID` | `403 Forbidden` |
 
-### 18.2 Audit-Logs
+### 20.2 Audit-Logs
 
 Nach jeder CREATE/UPDATE/DELETE-Operation:
 ```sql
@@ -1134,7 +1444,7 @@ SELECT * FROM tenant_berlin.audit_logs ORDER BY timestamp DESC LIMIT 5;
 - [ ] `timestamp` korrekt
 - [ ] Audit-Logs sind **unveränderlich**: `UPDATE` oder `DELETE` auf `audit_logs` → DB-Trigger verhindert dies
 
-### 18.3 Verschlüsselung
+### 20.3 Verschlüsselung
 
 ```sql
 -- Verschlüsselte Felder prüfen (sollten NICHT im Klartext sein):
@@ -1144,7 +1454,7 @@ SELECT phone_work, phone_mobile FROM tenant_berlin.user_profiles;
 - [ ] Werte beginnen mit verschlüsseltem Präfix (nicht Klartext)
 - [ ] API gibt entschlüsselte Werte zurück
 
-### 18.4 Paginierung (alle Listen-Endpunkte)
+### 20.4 Paginierung (alle Listen-Endpunkte)
 
 | Parameter | Test |
 |-----------|------|
@@ -1154,7 +1464,7 @@ SELECT phone_work, phone_mobile FROM tenant_berlin.user_profiles;
 | `sortBy=title` | Alphabetisch sortiert |
 | `sortBy=createdAt` | Chronologisch sortiert |
 
-### 18.5 Validierung (alle POST/PUT-Endpunkte)
+### 20.5 Validierung (alle POST/PUT-Endpunkte)
 
 | Test | Erwartung |
 |------|-----------|
@@ -1164,7 +1474,7 @@ SELECT phone_work, phone_mobile FROM tenant_berlin.user_profiles;
 | `status` = `"INVALID"` | `400` |
 | JSON-Syntax-Fehler | `400` |
 
-### 18.6 Deadline-Monitor
+### 20.6 Deadline-Monitor
 
 Der `DeadlineMonitorService` läuft täglich um 00:00 Uhr (Cron):
 ```sql
@@ -1177,7 +1487,7 @@ WHERE deadline < CURRENT_DATE AND status NOT IN ('COMPLETED', 'CANCELLED');
 
 ---
 
-## 19. Empfohlene Testreihenfolge
+## 21. Empfohlene Testreihenfolge
 
 Führen Sie die Tests in dieser Reihenfolge durch, da spätere Tests auf Daten früherer Tests aufbauen:
 
@@ -1192,46 +1502,63 @@ Führen Sie die Tests in dieser Reihenfolge durch, da spätere Tests auf Daten f
 9. **Fortschritts-Kaskade testen** (§ 9.2 → § 8.2 → § 7.2)
 10. **Notiz / Diagramm / Anhang** (§ 10–13)
 11. **Benutzerprofil** (§ 14)
-12. **Rollen & Berechtigungen** (§ 17)
-13. **Mandanteneinstellungen + 2FA** (§ 16)
-14. **Mandant suspendieren / reaktivieren** (§ 3.4–3.5)
-15. **Übergreifende Prüfungen** (§ 18)
+12. **Benutzerverwaltung** (§ 17) — Einladen, Deaktivieren, Aktivieren, Passwort zurücksetzen, Rolle ändern, Löschen
+13. **Rollen & Berechtigungen** (§ 18) — CRUD + Zuweisung
+14. **Super-Admin Endpunkte** (§ 19) — Mandantenübersicht, Benutzer einsehen, Admin erstellen
+15. **Mandanteneinstellungen + 2FA** (§ 16)
+16. **Mandant suspendieren / reaktivieren** (§ 3.4–3.5)
+17. **Übergreifende Prüfungen** (§ 20)
 
 ---
 
-## 20. Postman-Collection-Struktur
+## 22. Postman-Collection-Struktur
 
 Empfohlene Ordnerstruktur in Postman:
 
 ```
 📁 Planour REST API
 ├── 📁 00 – Setup
-│   ├── Token holen (user_berlin)
-│   ├── Token holen (user_munich)
+│   ├── Token holen (user_berlin / Tenant_Admin)
+│   ├── Token holen (user_munich / Employee)
+│   ├── Token holen (Super Admin / Client Credentials)
 │   └── Mandant registrieren
-├── 📁 01 – Handlungsfelder
-│   ├── POST Erstellen
-│   ├── GET Alle auflisten
-│   ├── GET Nach ID
-│   ├── PUT Aktualisieren
-│   └── DELETE Löschen
-├── 📁 02 – Projekte
-├── 📁 03 – Konzepte
-├── 📁 04 – Maßnahmen
-├── 📁 05 – Meilensteine
-├── 📁 06 – Aufgaben
+├── 📁 01 – Handlungsfelder (CRUD)
+├── 📁 02 – Projekte (CRUD)
+├── 📁 03 – Konzepte (CRUD)
+├── 📁 04 – Maßnahmen (CRUD + SDGs + Progress)
+├── 📁 05 – Meilensteine (CRUD + Progress Cascade)
+├── 📁 06 – Aufgaben (CRUD + Progress Cascade)
 ├── 📁 07 – Notizen
 ├── 📁 08 – Diagramme (Ressource)
 ├── 📁 09 – Diagramm-Engine
-├── 📁 10 – Anhänge
+├── 📁 10 – Anhänge (Upload + Download + Bildverarbeitung)
 ├── 📁 11 – Benutzerprofil (Self-Service)
 ├── 📁 12 – Benutzerverzeichnis
-├── 📁 13 – Mandanteneinstellungen
-├── 📁 14 – Mandantenkontingent
-├── 📁 15 – Mandanten-Lebenszyklus
-├── 📁 16 – Rollen & Berechtigungen
-└── 📁 17 – Übergreifende Tests
+├── 📁 13 – Benutzerverwaltung (Tenant_Admin)
+│   ├── GET Benutzer auflisten
+│   ├── POST Benutzer einladen
+│   ├── POST Benutzer einladen (mit Rolle)
+│   ├── PUT Benutzer deaktivieren
+│   ├── PUT Benutzer aktivieren
+│   ├── POST Passwort zurücksetzen
+│   ├── PUT Realm-Rolle ändern
+│   └── DELETE Benutzer löschen
+├── 📁 14 – Rollen & Berechtigungen
+│   ├── POST Rolle erstellen
+│   ├── GET Rollen auflisten
+│   ├── PUT Rolle aktualisieren
+│   ├── DELETE Rolle löschen
+│   └── POST Rolle zuweisen
+├── 📁 15 – Super-Admin
+│   ├── GET Alle Mandanten auflisten
+│   ├── GET Mandantenbenutzer auflisten
+│   └── POST Mandanten-Admin erstellen
+├── 📁 16 – Mandanteneinstellungen (+ 2FA)
+├── 📁 17 – Mandantenkontingent
+├── 📁 18 – Mandanten-Lebenszyklus (Suspend/Reactivate)
+└── 📁 19 – Übergreifende Tests
     ├── Tenant-Isolation
     ├── Validierungsfehler
-    └── Berechtigungsprüfung
+    ├── Berechtigungsprüfung
+    └── Verschlüsselungsprüfung
 ```

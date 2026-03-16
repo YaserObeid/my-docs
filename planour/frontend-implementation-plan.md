@@ -4,7 +4,7 @@
 >
 > **البنية:** Turborepo + pnpm Monorepo
 > **التطبيقات:** 3 تطبيقات Next.js | **الحزم المشتركة:** 5 حزم
-> **الحالة الحالية:** Backend API جاهز بالكامل (14 Controller، 209 اختبار، OpenAPI spec موثقة بالألمانية)
+> **الحالة الحالية:** Backend API جاهز بالكامل (16 Controller، 237 اختبار، OpenAPI spec موثقة بالألمانية)
 
 ---
 
@@ -437,7 +437,9 @@ apps/tenant-dashboard/src/app/
 │   │   ├── page.tsx               # دليل الموظفين
 │   │   └── [id]/page.tsx
 │   ├── settings/page.tsx          # إعدادات المستأجر
-│   └── roles/page.tsx             # إدارة الأدوار
+│   ├── roles/page.tsx             # إدارة الأدوار (CRUD)
+│   └── users/                     # إدارة المستخدمين
+│       └── page.tsx               # عرض + دعوة + تعطيل/تفعيل/حذف
 ```
 
 **مكونات الـ Layout:**
@@ -551,24 +553,49 @@ FileUpload Component:
 5. **المهارات والشهادات** — مهارات, لغات, شهادات مهنية
 6. **التفضيلات** — الثيم, اللغة, تنسيق التاريخ, إعدادات الإشعارات
 
-### المرحلة 3F — إدارة الأدوار والصلاحيات
+### المرحلة 3F — إدارة المستخدمين والأدوار ✅ (Backend جاهز)
+
+#### إدارة المستخدمين (Benutzerverwaltung)
 
 | الصفحة | الوصف | الدور المطلوب |
 |--------|-------|--------------|
-| `/roles` | عرض وإنشاء الأدوار الديناميكية | `Tenant_Admin` |
+| `/users` | عرض مستخدمي المستأجر من Keycloak | `Tenant_Admin` |
+| `/users/invite` | دعوة مستخدم جديد | `Tenant_Admin` |
+
+**المكونات:**
+```
+UsersPage:
+├── DataTable (GET /api/v1/users)
+│   ├── الاسم, البريد, الحالة, الأدوار
+│   └── أزرار الإجراءات:
+│       ├── تعطيل/تفعيل (PUT /users/{id}/disable|enable)
+│       ├── إعادة تعيين كلمة المرور (POST /users/{id}/reset-password)
+│       ├── تغيير الدور (PUT /users/{id}/realm-role)
+│       └── حذف (DELETE /users/{id})
+├── زر "Benutzer einladen" → Dialog (POST /users/invite)
+└── مؤشر الحصة (usedUsers / maxUsers)
+```
+
+#### إدارة الأدوار الديناميكية
+
+| الصفحة | الوصف | الدور المطلوب |
+|--------|-------|--------------|
+| `/roles` | CRUD كامل للأدوار الديناميكية | `Tenant_Admin` |
 | حوار التعيين | تعيين دور لمستخدم على مورد | `Tenant_Admin` أو `ASSIGN_USERS` |
 
 **المكونات:**
 ```
 RolesPage:
-├── قائمة الأدوار الموجودة
-├── زر "إنشاء دور جديد" → Dialog
+├── DataTable (GET /api/v1/roles — مع Pagination)
+│   ├── اسم الدور, الوصف, الصلاحيات
+│   └── أزرار: تعديل (PUT /roles/{id}) + حذف (DELETE /roles/{id})
+├── زر "Neue Rolle erstellen" → Dialog (POST /roles)
 │   ├── اسم الدور + وصف
 │   └── اختيار الصلاحيات (Checkboxes)
-└── على كل مورد: زر "تعيين مستخدم" → Dialog
-    ├── اختيار المستخدم (من دليل الموظفين)
+└── على كل مورد: زر "Benutzer zuweisen" → Dialog
+    ├── اختيار المستخدم
     ├── اختيار الدور
-    └── Cascade toggle (توريث للأبناء)
+    └── Cascade toggle
 ```
 
 ### المرحلة 3G — إعدادات المستأجر
@@ -612,16 +639,34 @@ apps/admin-dashboard/src/app/(dashboard)/
 
 | الصفحة | الوصف | الـ API |
 |--------|-------|--------|
-| **قائمة المستأجرين** | جدول بجميع المستأجرين + حالتهم | (يحتاج endpoint جديد أو قراءة من DB) |
+| **قائمة المستأجرين** | جدول بجميع المستأجرين + حالتهم | `GET /tenants` ✅ (مع Pagination) |
 | **تسجيل مستأجر** | نموذج تسجيل (tenantId + name) | `POST /tenants/register` |
+| **مستخدمو المستأجر** | عرض مستخدمي أي مستأجر | `GET /tenants/{id}/users` ✅ |
+| **إنشاء Admin** | إنشاء Tenant_Admin لمستأجر | `POST /tenants/{id}/admin` ✅ |
 | **إدارة الحصص** | عرض/تعديل الحصص (مستخدمين, تخزين, قطاعات) | `GET/PUT /tenants/{id}/quota` |
 | **دورة الحياة** | أزرار تعليق/إعادة تفعيل مع تأكيد | `PUT /tenants/{id}/suspend\|reactivate` |
 
 **ملاحظة معمارية:** Admin Dashboard يعمل بدون `X-Tenant-ID` header (سياق `public`) — يحتاج تصميم مختلف للـ API Client.
 
+```
+apps/admin-dashboard/src/app/(dashboard)/
+├── page.tsx                       # نظرة عامة (عدد المستأجرين, إحصائيات)
+├── tenants/
+│   ├── page.tsx                   # قائمة المستأجرين (GET /tenants)
+│   ├── register/page.tsx          # تسجيل مستأجر جديد
+│   └── [tenantId]/
+│       ├── page.tsx               # تفاصيل المستأجر
+│       ├── users/page.tsx         # مستخدمو المستأجر (GET /tenants/{id}/users)
+│       ├── admin/page.tsx         # إنشاء Admin (POST /tenants/{id}/admin)
+│       ├── quota/page.tsx         # إدارة الحصص
+│       └── lifecycle/page.tsx     # تعليق/إعادة تفعيل
+```
+
 ### المخرجات المتوقعة:
-- [ ] عرض جميع المستأجرين مع حالتهم (ACTIVE/SUSPENDED)
+- [ ] عرض جميع المستأجرين مع حالتهم (ACTIVE/SUSPENDED) — Paginated
 - [ ] تسجيل مستأجر جديد
+- [ ] عرض مستخدمي أي مستأجر
+- [ ] إنشاء Tenant Admin لمستأجر
 - [ ] تعديل الحصص
 - [ ] تعليق/إعادة تفعيل مع تأكيد وتحذير
 
@@ -857,8 +902,8 @@ KEYCLOAK_CLIENT_SECRET=***
 الأسبوع 7-8:   المرحلة 3A-3B (Layout + Dashboard)
 الأسبوع 9-12:  المرحلة 3C (CRUD لجميع الكيانات)
 الأسبوع 13-14: المرحلة 3D (Media System)
-الأسبوع 15-16: المرحلة 3E-3G (Profile + Roles + Settings)
-الأسبوع 17-18: المرحلة 4 (Admin Dashboard)
+الأسبوع 15-16: المرحلة 3E-3G (Profile + Users + Roles + Settings)
+الأسبوع 17-18: المرحلة 4 (Admin Dashboard — APIs جاهزة بالكامل)
 الأسبوع 19-20: المرحلة 5 (Citizen Portal — هيكل فقط)
 الأسبوع 21-22: المرحلة 6 (Tests + Performance + CI/CD + Deploy)
 ```
