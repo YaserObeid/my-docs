@@ -1,134 +1,170 @@
-# Planour REST API — Postman-Testanleitung
+# دليل اختبار Planour REST API — Postman
 
-> **Version:** 1.0 | **Datum:** 2026-03-14 | **Sprache:** Deutsch
+> **الإصدار:** 2.0 | **التاريخ:** 2026-03-16 | **البيئة:** Staging Server
 
 ---
 
-## 1. Voraussetzungen
+## 1. المتطلبات الأساسية
 
-| Dienst | URL | Beschreibung |
-|--------|-----|--------------|
-| **Spring Boot API** | `http://localhost:8080` | Planour REST API |
-| **Keycloak** | `http://localhost:8081` | Identity Provider |
-| **PostgreSQL** | `localhost:5432` | Datenbank |
-| **MinIO** | `localhost:9000` | Object Storage |
+| الخدمة | الرابط | الوصف |
+|--------|--------|-------|
+| **Spring Boot API** | `http://10.0.0.2:8080` | Planour REST API |
+| **Keycloak** | `http://10.0.0.3:8081` | Identity Provider |
+| **PostgreSQL** | `10.0.0.3:5432` | قاعدة البيانات |
+| **MinIO** | `http://10.0.0.3:9002` | Object Storage |
+| **Swagger UI** | `http://10.0.0.2:8080/swagger-ui.html` | توثيق API التفاعلي |
+| **OpenAPI Spec** | `http://10.0.0.2:8080/v3/api-docs` | للاستيراد في Postman |
 
-### 1.1 Postman-Umgebungsvariablen
+---
 
-Erstellen Sie eine Postman-Umgebung mit folgenden Variablen:
+### 1.1 متغيرات بيئة Postman
 
-| Variable | Wert | Beschreibung |
-|----------|------|--------------|
-| `base_url` | `http://localhost:8080/api/v1` | Basis-URL der API |
-| `keycloak_url` | `http://localhost:8081` | Keycloak-Server |
-| `realm` | `planour` | Keycloak-Realm |
-| `client_id` | `planour-rest-api` | OAuth2 Client-ID |
-| `tenant_id` | `tenant_berlin` | Aktive Mandanten-ID |
-| `token` | *(wird automatisch gesetzt)* | JWT-Token |
+أنشئ Environment جديداً باسم **Planour Staging** بالمتغيرات التالية:
 
-### 1.2 JWT-Token beschaffen
+| المتغير | القيمة | الوصف |
+|---------|--------|-------|
+| `base_url` | `http://10.0.0.2:8080/api/v1` | الرابط الأساسي للـ API |
+| `keycloak_url` | `http://10.0.0.3:8081` | خادم Keycloak |
+| `realm` | `planour` | اسم الـ Realm |
+| `client_id` | `planour-rest-api` | معرف العميل OAuth2 |
+| `tenant_id` | `tenant_berlin` | معرف المستأجر النشط |
+| `token` | *(يُملأ تلقائياً)* | JWT Token للمستخدم الحالي |
+| `token_super_admin` | *(يُملأ تلقائياً)* | JWT Token لـ SUPER_ADMIN |
+| `sector_id` | *(يُملأ تلقائياً)* | UUID قطاع المستأجر |
+| `project_id` | *(يُملأ تلقائياً)* | UUID المشروع |
+| `concept_id` | *(يُملأ تلقائياً)* | UUID المفهوم |
+| `measure_id` | *(يُملأ تلقائياً)* | UUID الإجراء |
+| `milestone_id` | *(يُملأ تلقائياً)* | UUID المعلم |
+| `task_id` | *(يُملأ تلقائياً)* | UUID المهمة |
+| `role_id` | *(يُملأ تلقائياً)* | UUID الدور الديناميكي |
+| `invited_user_id` | *(يُملأ تلقائياً)* | Keycloak UUID للمستخدم المدعو |
 
-**Request: Token holen (Direct Access Grant)**
+---
+
+### 1.2 الحصول على JWT Token
+
+**نوع الطلب:** `POST`
 ```
-POST {{keycloak_url}}/realms/{{realm}}/protocol/openid-connect/token
+{{keycloak_url}}/realms/{{realm}}/protocol/openid-connect/token
+```
+
+**Headers:**
+```
 Content-Type: application/x-www-form-urlencoded
-
-grant_type=password
-client_id=planour-rest-api
-username=user_berlin
-password=pass_berlin
 ```
 
-**Postman-Skript (Tests-Tab) zum automatischen Speichern:**
+**Body → x-www-form-urlencoded:**
+```
+grant_type  = password
+client_id   = planour-rest-api
+username    = {اسم_المستخدم}
+password    = {كلمة_المرور}
+scope       = openid
+```
+
+**سكريبت التحميل التلقائي (تبويب Tests):**
 ```javascript
-var jsonData = pm.response.json();
-pm.environment.set("token", jsonData.access_token);
+var json = pm.response.json();
+pm.environment.set("token", json.access_token);
+// للـ SUPER_ADMIN:
+// pm.environment.set("token_super_admin", json.access_token);
 ```
 
-### 1.3 Testbenutzer
+> **ملاحظة:** أنشئ مستخدم `SUPER_ADMIN` يدوياً في Keycloak Console على:
+> `http://10.0.0.3:8081` → Realm `planour` → Users → Add user → Assign role: `SUPER_ADMIN`
 
-| Benutzer | Benutzername | Passwort | Mandant | Rolle |
-|----------|-------------|----------|---------|-------|
-| Berlin-Admin | `user_berlin` | `pass_berlin` | `tenant_berlin` | `Tenant_Admin` |
-| München-Mitarbeiter | `user_munich` | `pass_munich` | `tenant_munich` | `Employee` |
+---
 
-### 1.4 Globale Header (für alle geschützten Anfragen)
+### 1.3 مستخدمو الاختبار
 
-| Header | Wert |
-|--------|------|
+| المستخدم | الدور | المستأجر | ملاحظة |
+|----------|-------|---------|--------|
+| *(أنشئ يدوياً)* | `SUPER_ADMIN` | — | ينشأ في Keycloak قبل بدء الاختبارات |
+| *(ينشأ عبر API)* | `Tenant_Admin` | `tenant_berlin` | ينشأ عبر `POST /tenants/{id}/admin` |
+| *(ينشأ عبر API)* | مستخدم عادي | `tenant_berlin` | ينشأ عبر `POST /users/invite` |
+
+---
+
+### 1.4 الـ Headers المطلوبة لجميع الطلبات المحمية
+
+| الـ Header | القيمة |
+|------------|--------|
 | `Authorization` | `Bearer {{token}}` |
 | `X-Tenant-ID` | `{{tenant_id}}` |
 | `Content-Type` | `application/json` |
 
+> **تنبيه مهم:** هيدر `X-Tenant-ID` إلزامي لجميع الطلبات المحمية.
+> الاستثناء الوحيد: `POST /tenants/register` (عام، لا يحتاج مصادقة).
+
 ---
 
-## 2. Fehlerantwort-Format (gilt für alle Endpunkte)
-
-Alle Fehler folgen diesem JSON-Format:
+## 2. صيغة ردود الأخطاء (لجميع النقاط)
 
 ```json
 {
-  "timestamp": "2026-03-14T10:30:45.123456",
+  "timestamp": "2026-03-16T10:30:45.123456",
   "status": 400,
   "error": "Bad Request",
-  "message": "Beschreibung des Fehlers",
+  "message": "وصف الخطأ",
   "details": {
-    "title": "darf nicht leer sein"
+    "title": "يجب ألا يكون فارغاً"
   }
 }
 ```
 
-| HTTP-Status | Bedeutung | Typischer Auslöser |
-|-------------|-----------|-------------------|
-| `400` | Bad Request | Validierungsfehler (`@NotBlank`, `@NotNull`) |
-| `401` | Unauthorized | Kein oder ungültiges JWT-Token |
-| `403` | Forbidden | Fehlende Berechtigung, suspendierter Mandant, oder Benutzer gehört nicht zum Mandanten |
-| `404` | Not Found | Ressource/Mandant nicht gefunden |
-| `409` | Conflict | Kontingent überschritten oder Benutzer existiert bereits |
-| `500` | Internal Server Error | Unerwarteter Serverfehler |
-| `502` | Bad Gateway | Keycloak-Verbindungsfehler |
-| `503` | Service Unavailable | MinIO/Storage nicht erreichbar |
+| كود HTTP | المعنى | السبب الشائع |
+|----------|--------|-------------|
+| `400` | طلب غير صالح | خطأ في التحقق (`@NotBlank`، `@NotNull`) |
+| `401` | غير مصادق | JWT مفقود أو منتهي الصلاحية |
+| `403` | ممنوع | صلاحية غير كافية، مستأجر معلق، أو مستخدم من مستأجر آخر |
+| `404` | غير موجود | المورد أو المستأجر غير موجود |
+| `409` | تعارض | تجاوز الحصة أو المستخدم موجود مسبقاً |
+| `422` | كيان غير قابل للمعالجة | بيانات صحيحة هيكلياً لكن غير قابلة للمعالجة |
+| `500` | خطأ داخلي | خطأ غير متوقع في الخادم |
+| `502` | بوابة سيئة | خطأ في الاتصال بـ Keycloak |
+| `503` | الخدمة غير متاحة | MinIO/Storage غير متاح |
 
 ---
 
-## 3. Mandantenverwaltung (Super-Admin)
+## 3. إدارة المستأجرين (SUPER_ADMIN)
 
-### 3.1 Mandant registrieren
+### 3.1 تسجيل مستأجر جديد
 
 ```
 POST {{base_url}}/tenants/register?tenantId=tenant_berlin&name=Stadt Berlin
 ```
 
-**Header:** Kein `Authorization` nötig (öffentlicher Endpunkt), kein `X-Tenant-ID` nötig.
+**Headers:** لا يحتاج `Authorization` (نقطة عامة)، ولا `X-Tenant-ID`.
 
-**Erwartete Antwort:** `200 OK`
+**الاستجابة المتوقعة:** `200 OK`
 ```json
 {
   "id": "tenant_berlin",
   "name": "Stadt Berlin",
   "status": "ACTIVE",
   "deactivatedAt": null,
-  "createdAt": "2026-03-14T10:00:00"
+  "createdAt": "2026-03-16T10:00:00"
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **DB (public.tenant):** Neuer Eintrag mit `status = 'ACTIVE'` und `deactivated_at = NULL`
-- [ ] **DB (public.tenant_keys):** Eintrag mit `wrapped_key` vorhanden (Verschlüsselungsschlüssel)
-- [ ] **DB (public.tenant_quotas):** Eintrag mit Standardwerten (`max_users=50`, `max_storage_mb=1024`, `max_sectors=10`)
-- [ ] **DB (Schema):** Neues Schema `tenant_berlin` existiert mit allen Tenant-Tabellen
-- [ ] **Fehlerfall:** Doppelte Registrierung mit gleicher `tenantId` → Fehler erwartet
+**نقاط التحقق:**
+- [ ] **DB (public.tenant):** سجل جديد بـ `status = 'ACTIVE'` و `deactivated_at = NULL`
+- [ ] **DB (public.tenant_keys):** سجل بـ `wrapped_key` (مفتاح التشفير المغلف)
+- [ ] **DB (public.tenant_quotas):** سجل بالقيم الافتراضية (`max_users=50`, `max_storage_mb=1024`, `max_sectors=10`)
+- [ ] **DB (Schema):** Schema جديد `tenant_berlin` بجميع الجداول
+- [ ] **حالة الخطأ:** تسجيل مكرر بنفس `tenantId` → خطأ متوقع
 
 ---
 
-### 3.2 Mandantenkontingent abrufen
+### 3.2 استعلام عن حصة المستأجر
 
 ```
 GET {{base_url}}/tenants/{{tenant_id}}/quota
-Authorization: Bearer {{token}}
+Authorization: Bearer {{token_super_admin}}
+X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `200 OK`
+**الاستجابة المتوقعة:** `200 OK`
 ```json
 {
   "tenantId": "tenant_berlin",
@@ -141,18 +177,19 @@ Authorization: Bearer {{token}}
 }
 ```
 
-**Prüfpunkte:**
-- [ ] `usedUsers`, `usedStorageBytes`, `usedSectors` stimmen mit tatsächlichem Verbrauch überein
-- [ ] Tenant_Admin kann nur eigenes Kontingent abrufen
-- [ ] Zugriff auf fremden Mandanten → `403 Forbidden`
+**نقاط التحقق:**
+- [ ] `usedUsers`، `usedStorageBytes`، `usedSectors` تتوافق مع الاستهلاك الفعلي
+- [ ] `Tenant_Admin` يمكنه الاطلاع على حصة مستأجره فقط
+- [ ] الوصول لمستأجر آخر → `403 Forbidden`
 
 ---
 
-### 3.3 Mandantenkontingent aktualisieren
+### 3.3 تحديث حصة المستأجر (SUPER_ADMIN فقط)
 
 ```
 PUT {{base_url}}/tenants/{{tenant_id}}/quota
 Authorization: Bearer {{token_super_admin}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
@@ -162,61 +199,61 @@ Content-Type: application/json
 }
 ```
 
-**Erwartete Antwort:** `200 OK` mit aktualisierten Werten.
+**الاستجابة المتوقعة:** `200 OK` بالقيم المحدثة.
 
-**Prüfpunkte:**
-- [ ] **DB (public.tenant_quotas):** Werte aktualisiert
-- [ ] Nur `SUPER_ADMIN` kann aktualisieren → Tenant_Admin erhält `403`
-- [ ] Validierung: `maxUsers < 1` → `400 Bad Request`
-- [ ] Validierung: `maxStorageMb = null` → `400 Bad Request`
+**نقاط التحقق:**
+- [ ] **DB (public.tenant_quotas):** القيم محدثة
+- [ ] `Tenant_Admin` → `403 Forbidden`
+- [ ] `maxUsers < 1` → `400 Bad Request`
+- [ ] `maxStorageMb = null` → `400 Bad Request`
 
 ---
 
-### 3.4 Mandant suspendieren
+### 3.4 تعليق المستأجر (Suspend)
 
 ```
 PUT {{base_url}}/tenants/{{tenant_id}}/suspend
 Authorization: Bearer {{token_super_admin}}
 ```
 
-**Erwartete Antwort:** `200 OK`
+**الاستجابة المتوقعة:** `200 OK`
 ```json
 {
   "id": "tenant_berlin",
   "status": "SUSPENDED",
-  "deactivatedAt": "2026-03-14T10:30:00"
+  "deactivatedAt": "2026-03-16T10:30:00"
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **DB (public.tenant):** `status = 'SUSPENDED'` und `deactivated_at` gesetzt
-- [ ] **Keycloak:** Alle Benutzer des Mandanten sind deaktiviert (`enabled = false`)
-- [ ] **API-Zugriff:** Jede Anfrage mit `X-Tenant-ID: tenant_berlin` → `403 Forbidden`
-- [ ] Erneutes Suspendieren → `400 Bad Request` (bereits suspendiert)
-- [ ] Nicht existierender Mandant → `404 Not Found`
+**نقاط التحقق:**
+- [ ] **DB (public.tenant):** `status = 'SUSPENDED'` و `deactivated_at` محدد
+- [ ] **Keycloak:** جميع مستخدمي المستأجر معطلون (`enabled = false`)
+- [ ] **API:** أي طلب بـ `X-Tenant-ID: tenant_berlin` → `403 Forbidden`
+- [ ] تعليق مرة أخرى → `400 Bad Request` (معلق مسبقاً)
+- [ ] مستأجر غير موجود → `404 Not Found`
 
 ---
 
-### 3.5 Mandant reaktivieren
+### 3.5 إعادة تفعيل المستأجر (Reactivate)
 
 ```
 PUT {{base_url}}/tenants/{{tenant_id}}/reactivate
 Authorization: Bearer {{token_super_admin}}
 ```
 
-**Erwartete Antwort:** `200 OK` mit `status: "ACTIVE"`, `deactivatedAt: null`
+**الاستجابة المتوقعة:** `200 OK` بـ `status: "ACTIVE"`، `deactivatedAt: null`
 
-**Prüfpunkte:**
-- [ ] **DB (public.tenant):** `status = 'ACTIVE'` und `deactivated_at = NULL`
-- [ ] **Keycloak:** Alle Benutzer des Mandanten sind wieder aktiviert
-- [ ] **API-Zugriff:** Anfragen mit `X-Tenant-ID` funktionieren wieder
-- [ ] Erneutes Reaktivieren eines aktiven Mandanten → `400 Bad Request`
+**نقاط التحقق:**
+- [ ] **DB (public.tenant):** `status = 'ACTIVE'` و `deactivated_at = NULL`
+- [ ] **Keycloak:** جميع مستخدمي المستأجر مفعلون مجدداً
+- [ ] الطلبات بـ `X-Tenant-ID` تعمل مجدداً
+- [ ] إعادة تفعيل مستأجر نشط → `400 Bad Request`
 
 ---
 
-## 4. Handlungsfelder (Sektoren)
+## 4. قطاعات العمل (Sektoren / Handlungsfelder)
 
-### 4.1 Neues Handlungsfeld anlegen
+### 4.1 إنشاء قطاع جديد
 
 ```
 POST {{base_url}}/sectors
@@ -225,42 +262,42 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Klimaschutz und Energie",
-  "description": "Alle Maßnahmen zum Klimaschutz und zur Energiewende"
+  "title": "حماية المناخ والطاقة",
+  "description": "جميع الإجراءات المتعلقة بحماية المناخ والتحول الطاقوي"
 }
 ```
 
-**Erwartete Antwort:** `201 Created`
+**الاستجابة المتوقعة:** `201 Created`
 ```json
 {
-  "id": "uuid-hier",
-  "title": "Klimaschutz und Energie",
-  "description": "Alle Maßnahmen zum Klimaschutz und zur Energiewende",
+  "id": "uuid-here",
+  "title": "حماية المناخ والطاقة",
+  "description": "جميع الإجراءات المتعلقة بحماية المناخ والتحول الطاقوي",
   "isActive": true,
   "projectCount": 0,
   "conceptCount": 0,
   "createdAt": "...",
-  "createdBy": "user-uuid",
+  "createdBy": "keycloak-user-uuid",
   "updatedAt": null,
   "updatedBy": null
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **DB (tenant_berlin.resource_nodes):** Neuer Eintrag mit `resource_type = 'SECTOR'`
-- [ ] **DB (tenant_berlin.sectors):** Eintrag mit FK auf `resource_nodes`
-- [ ] **DB (tenant_berlin.audit_logs):** Eintrag mit `action_name = 'CREATE_SECTOR'` oder ähnlich
-- [ ] **DB (public.tenant_quotas):** `used_sectors` um 1 erhöht
-- [ ] `ltree path` ist korrekt gesetzt (z.B. `<uuid>`)
-- [ ] `createdBy` enthält die UUID des authentifizierten Benutzers
-- [ ] **Fehlerfall:** `title` leer → `400` mit Validierungsfehler
-- [ ] **Fehlerfall:** Sektorkontingent erschöpft → `409 Conflict`
+**نقاط التحقق:**
+- [ ] **DB (tenant_berlin.resource_nodes):** سجل جديد بـ `resource_type = 'SECTOR'`
+- [ ] **DB (tenant_berlin.sectors):** سجل بـ FK على `resource_nodes`
+- [ ] **DB (tenant_berlin.audit_logs):** سجل بـ `action_name` للإنشاء
+- [ ] **DB (public.tenant_quotas):** `used_sectors` زاد بمقدار 1
+- [ ] `ltree path` محدد بشكل صحيح (مثال: `<uuid>`)
+- [ ] `createdBy` يحتوي UUID المستخدم المصادق
+- [ ] **خطأ:** `title` فارغ → `400` مع رسالة التحقق
+- [ ] **خطأ:** استنفاد حصة القطاعات → `409 Conflict`
 
-> **Variable speichern:** Speichern Sie die `id` aus der Antwort als `{{sector_id}}` in der Postman-Umgebung.
+> **احفظ المتغير:** احفظ `id` من الاستجابة في `{{sector_id}}`
 
 ---
 
-### 4.2 Alle Handlungsfelder auflisten
+### 4.2 عرض قائمة القطاعات
 
 ```
 GET {{base_url}}/sectors?page=0&size=20&sortBy=createdAt
@@ -268,7 +305,7 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `200 OK` (Paginierte Antwort)
+**الاستجابة المتوقعة:** `200 OK` (صفحات)
 ```json
 {
   "content": [...],
@@ -279,15 +316,15 @@ X-Tenant-ID: {{tenant_id}}
 }
 ```
 
-**Prüfpunkte:**
-- [ ] `totalElements` stimmt mit der Anzahl der Sektoren in der DB überein
-- [ ] Paginierung: `page=1` bei einem Sektor → leere `content`-Liste
-- [ ] Sortierung: `sortBy=title` → alphabetisch sortiert
-- [ ] Nur Sektoren des eigenen Mandanten werden zurückgegeben (Tenant-Isolation)
+**نقاط التحقق:**
+- [ ] `totalElements` يتطابق مع عدد القطاعات في DB
+- [ ] الترقيم: `page=1` مع قطاع واحد → قائمة `content` فارغة
+- [ ] الترتيب: `sortBy=title` → مرتب أبجدياً
+- [ ] فقط قطاعات المستأجر الحالي (عزل المستأجرين)
 
 ---
 
-### 4.3 Handlungsfeld abrufen
+### 4.3 استعلام عن قطاع محدد
 
 ```
 GET {{base_url}}/sectors/{{sector_id}}
@@ -295,14 +332,14 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Prüfpunkte:**
-- [ ] Antwort enthält alle Felder inkl. `projectCount` und `conceptCount`
-- [ ] Nicht existierende UUID → `404 Not Found`
-- [ ] UUID eines anderen Mandanten → `403 Forbidden` oder `404`
+**نقاط التحقق:**
+- [ ] الاستجابة تحتوي جميع الحقول بما فيها `projectCount` و `conceptCount`
+- [ ] UUID غير موجود → `404 Not Found`
+- [ ] UUID من مستأجر آخر → `403 Forbidden` أو `404`
 
 ---
 
-### 4.4 Handlungsfeld aktualisieren
+### 4.4 تحديث قطاع
 
 ```
 PUT {{base_url}}/sectors/{{sector_id}}
@@ -311,21 +348,21 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Klimaschutz und Energie (aktualisiert)",
-  "description": "Erweiterte Beschreibung",
+  "title": "حماية المناخ والطاقة (محدث)",
+  "description": "وصف موسع",
   "isActive": true
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **DB:** `title` und `description` aktualisiert
-- [ ] **DB:** `updated_at` und `updated_by` gesetzt
-- [ ] **DB (audit_logs):** Eintrag mit `action_name` für Update
-- [ ] `isActive = false` → Handlungsfeld deaktiviert
+**نقاط التحقق:**
+- [ ] **DB:** `title` و `description` محدثان
+- [ ] **DB:** `updated_at` و `updated_by` محددان
+- [ ] **DB (audit_logs):** سجل التدقيق للتحديث
+- [ ] `isActive = false` → القطاع معطل
 
 ---
 
-### 4.5 Handlungsfeld löschen
+### 4.5 حذف قطاع
 
 ```
 DELETE {{base_url}}/sectors/{{sector_id}}
@@ -333,19 +370,19 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `204 No Content`
+**الاستجابة المتوقعة:** `204 No Content`
 
-**Prüfpunkte:**
-- [ ] **DB (resource_nodes):** Eintrag und alle Kinder (Projekte, Konzepte) gelöscht
-- [ ] **DB (public.tenant_quotas):** `used_sectors` um 1 verringert
-- [ ] **DB (audit_logs):** Löscheintrag vorhanden
-- [ ] Erneuter Abruf → `404 Not Found`
+**نقاط التحقق:**
+- [ ] **DB (resource_nodes):** الإدخال وجميع العناصر الفرعية محذوفة
+- [ ] **DB (public.tenant_quotas):** `used_sectors` انخفض بمقدار 1
+- [ ] **DB (audit_logs):** سجل الحذف موجود
+- [ ] الاستعلام مجدداً → `404 Not Found`
 
 ---
 
-## 5. Projekte
+## 5. المشاريع (Projekte)
 
-### 5.1 Neues Projekt anlegen (unter Handlungsfeld)
+### 5.1 إنشاء مشروع جديد (تحت قطاع)
 
 ```
 POST {{base_url}}/sectors/{{sector_id}}/projects
@@ -354,27 +391,27 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Radverkehrskonzept 2030",
-  "description": "Ausbau der Radinfrastruktur bis 2030",
+  "title": "مفهوم المرور الدراجات 2030",
+  "description": "تطوير البنية التحتية للدراجات حتى 2030",
   "priority": "HIGH"
 }
 ```
 
-**Erwartete Antwort:** `201 Created`
+**الاستجابة المتوقعة:** `201 Created`
 
-**Prüfpunkte:**
-- [ ] **DB (resource_nodes):** `parent_id` = Sektor-ID, `resource_type = 'PROJECT'`
-- [ ] **DB:** `ltree path` enthält Eltern-Pfad (z.B. `<sector_uuid>.<project_uuid>`)
+**نقاط التحقق:**
+- [ ] **DB (resource_nodes):** `parent_id` = معرف القطاع، `resource_type = 'PROJECT'`
+- [ ] **DB:** `ltree path` يحتوي مسار الأب (مثال: `<sector_uuid>.<project_uuid>`)
 - [ ] `priority` = `HIGH`
-- [ ] `parentId` in der Antwort = `sector_id`
-- [ ] **Fehlerfall:** `priority` = `null` → `400 Bad Request`
-- [ ] **Fehlerfall:** Nicht existierende `sector_id` → `404`
+- [ ] `parentId` في الاستجابة = `sector_id`
+- [ ] **خطأ:** `priority = null` → `400 Bad Request`
+- [ ] **خطأ:** `sector_id` غير موجود → `404`
 
-> **Variable speichern:** `{{project_id}}`
+> **احفظ المتغير:** `{{project_id}}`
 
 ---
 
-### 5.2 Projekte eines Handlungsfeldes auflisten
+### 5.2 عرض مشاريع قطاع
 
 ```
 GET {{base_url}}/sectors/{{sector_id}}/projects?page=0&size=20&sortBy=createdAt
@@ -382,13 +419,13 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Prüfpunkte:**
-- [ ] Nur Projekte dieses Handlungsfeldes werden zurückgegeben
-- [ ] `measureCount` stimmt mit der Anzahl der Maßnahmen überein
+**نقاط التحقق:**
+- [ ] فقط مشاريع هذا القطاع تُعاد
+- [ ] `measureCount` يتطابق مع عدد الإجراءات
 
 ---
 
-### 5.3 Projekt abrufen / aktualisieren / löschen
+### 5.3 استعلام / تحديث / حذف مشروع
 
 ```
 GET    {{base_url}}/projects/{{project_id}}
@@ -396,25 +433,25 @@ PUT    {{base_url}}/projects/{{project_id}}
 DELETE {{base_url}}/projects/{{project_id}}
 ```
 
-**PUT Body:**
+**Body للتحديث (PUT):**
 ```json
 {
-  "title": "Radverkehrskonzept 2030 (überarbeitet)",
-  "description": "Erweitert um E-Bike-Infrastruktur",
+  "title": "مفهوم المرور الدراجات 2030 (مراجعة)",
+  "description": "توسيع يشمل البنية التحتية للدراجات الكهربائية",
   "isActive": true,
   "priority": "MEDIUM"
 }
 ```
 
-**Prüfpunkte (wie Sektoren, zusätzlich):**
-- [ ] `priority`-Änderung wird korrekt gespeichert
-- [ ] Löschen entfernt auch alle untergeordneten Maßnahmen
+**نقاط التحقق:**
+- [ ] تغيير `priority` يُحفظ بشكل صحيح
+- [ ] الحذف يزيل أيضاً جميع الإجراءات التابعة
 
 ---
 
-## 6. Konzepte
+## 6. المفاهيم (Konzepte)
 
-### 6.1 Neues Konzept anlegen (unter Handlungsfeld)
+### 6.1 إنشاء مفهوم جديد (تحت قطاع)
 
 ```
 POST {{base_url}}/sectors/{{sector_id}}/concepts
@@ -423,17 +460,17 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Nachhaltigkeitsstrategie",
-  "description": "Langfristige Strategie zur nachhaltigen Stadtentwicklung",
+  "title": "استراتيجية الاستدامة",
+  "description": "استراتيجية طويلة الأمد للتنمية الحضرية المستدامة",
   "priority": "HIGH"
 }
 ```
 
-**Prüfpunkte:** Analog zu Projekten (§ 5.1).
+**نقاط التحقق:** مماثلة للمشاريع (§ 5.1)
 
-> **Variable speichern:** `{{concept_id}}`
+> **احفظ المتغير:** `{{concept_id}}`
 
-### 6.2 CRUD-Endpunkte
+### 6.2 نقاط CRUD للمفاهيم
 
 ```
 GET    {{base_url}}/sectors/{{sector_id}}/concepts
@@ -444,9 +481,9 @@ DELETE {{base_url}}/concepts/{{concept_id}}
 
 ---
 
-## 7. Maßnahmen
+## 7. الإجراءات (Maßnahmen)
 
-### 7.1 Neue Maßnahme anlegen (unter Projekt)
+### 7.1 إنشاء إجراء جديد (تحت مشروع)
 
 ```
 POST {{base_url}}/projects/{{project_id}}/measures
@@ -455,8 +492,8 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Radweg Mitte–Kreuzberg",
-  "description": "Neubau eines geschützten Radwegs",
+  "title": "مسار الدراجات - وسط المدينة",
+  "description": "إنشاء مسار دراجات محمي",
   "priority": "HIGH",
   "startDate": "2026-04-01",
   "deadline": "2026-12-31",
@@ -466,41 +503,41 @@ Content-Type: application/json
 }
 ```
 
-**Erwartete Antwort:** `201 Created`
+**الاستجابة المتوقعة:** `201 Created`
 ```json
 {
   "id": "uuid",
-  "title": "Radweg Mitte–Kreuzberg",
+  "title": "مسار الدراجات - وسط المدينة",
   "status": "TODO",
   "progress": 0,
   "weight": 30,
   "isContinuous": false,
-  "sustainabilityGoals": ["SUSTAINABLE_CITIES", "CLIMATE_ACTION"],
-  ...
+  "sustainabilityGoals": ["SUSTAINABLE_CITIES", "CLIMATE_ACTION"]
 }
 ```
 
-**Prüfpunkte:**
-- [ ] `status` = `TODO` (Standardwert)
+**نقاط التحقق:**
+- [ ] `status` = `TODO` (القيمة الافتراضية)
 - [ ] `progress` = `0`
-- [ ] `weight` berechnet sich automatisch wenn nicht angegeben (`@PrePersist`)
-- [ ] **DB (measure_sustainability_goals):** 2 Einträge für SDGs
-- [ ] `isContinuous = true` → Status geht nie automatisch auf `COMPLETED`
-- [ ] **Fehlerfall:** Maßnahme unter Konzept: `POST /concepts/{{concept_id}}/measures` → gleiches Format
+- [ ] **DB (measure_sustainability_goals):** سجلان لأهداف التنمية المستدامة
+- [ ] `isContinuous = true` → الحالة لا تنتقل تلقائياً إلى `COMPLETED`
+- [ ] إجراء تحت مفهوم: `POST /concepts/{{concept_id}}/measures` → نفس الصيغة
 
-> **Variable speichern:** `{{measure_id}}`
+> **احفظ المتغير:** `{{measure_id}}`
 
 ---
 
-### 7.2 Maßnahme aktualisieren (mit Statusübergang)
+### 7.2 تحديث إجراء (مع انتقال الحالة)
 
 ```
 PUT {{base_url}}/measures/{{measure_id}}
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Radweg Mitte–Kreuzberg",
-  "description": "Neubau eines geschützten Radwegs",
+  "title": "مسار الدراجات - وسط المدينة",
+  "description": "إنشاء مسار دراجات محمي",
   "isActive": true,
   "status": "IN_PROGRESS",
   "progress": 50,
@@ -513,38 +550,40 @@ Content-Type: application/json
 }
 ```
 
-**Prüfpunkte:**
-- [ ] `progress = 100` und `isContinuous = false` → `status` wechselt automatisch zu `COMPLETED`
-- [ ] `progress = 100` und `isContinuous = true` → `status` bleibt `IN_PROGRESS`
-- [ ] `progress > 0` und `status = TODO` → `status` wechselt automatisch zu `IN_PROGRESS`
-- [ ] SDGs können geändert/entfernt werden
+**نقاط التحقق:**
+- [ ] `progress = 100` و `isContinuous = false` → `status` ينتقل تلقائياً إلى `COMPLETED`
+- [ ] `progress = 100` و `isContinuous = true` → `status` يبقى `IN_PROGRESS`
+- [ ] `progress > 0` و `status = TODO` → `status` ينتقل تلقائياً إلى `IN_PROGRESS`
+- [ ] أهداف التنمية المستدامة يمكن تغييرها أو إزالتها
 
 ---
 
-### 7.3 Maßnahmen auflisten
+### 7.3 عرض الإجراءات
 
 ```
 GET {{base_url}}/projects/{{project_id}}/measures?page=0&size=20
 GET {{base_url}}/concepts/{{concept_id}}/measures?page=0&size=20
 ```
 
-**Prüfpunkte:**
-- [ ] `milestoneCount` stimmt mit Anzahl der Meilensteine überein
-- [ ] Nur Maßnahmen des angegebenen Eltern-Knotens
+**نقاط التحقق:**
+- [ ] `milestoneCount` يتطابق مع عدد المعالم
+- [ ] فقط إجراءات العنصر الأب المحدد
 
 ---
 
-## 8. Meilensteine
+## 8. المعالم (Meilensteine)
 
-### 8.1 Neuen Meilenstein anlegen
+### 8.1 إنشاء معلم جديد
 
 ```
 POST {{base_url}}/measures/{{measure_id}}/milestones
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Planungsphase abgeschlossen",
-  "description": "Alle Genehmigungen eingeholt",
+  "title": "اكتمال مرحلة التخطيط",
+  "description": "الحصول على جميع التصاريح",
   "priority": "MEDIUM",
   "startDate": "2026-04-01",
   "deadline": "2026-06-30",
@@ -552,22 +591,26 @@ Content-Type: application/json
 }
 ```
 
-**Prüfpunkte:**
-- [ ] `status = TODO`, `progress = 0`
+**نقاط التحقق:**
+- [ ] `status = TODO`، `progress = 0`
 - [ ] `parentId` = `measure_id`
-- [ ] `weight`-Berechnung: Wenn nicht angegeben → automatisch aus Datumsbereich berechnet
+- [ ] حساب `weight`: إذا لم يُحدد → يُحسب تلقائياً من نطاق التاريخ
 
-> **Variable speichern:** `{{milestone_id}}`
+> **احفظ المتغير:** `{{milestone_id}}`
 
-### 8.2 Meilenstein aktualisieren (Fortschritts-Kaskade)
+---
+
+### 8.2 تحديث معلم (تتالي التقدم)
 
 ```
 PUT {{base_url}}/milestones/{{milestone_id}}
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Planungsphase abgeschlossen",
-  "description": "Alle Genehmigungen eingeholt",
+  "title": "اكتمال مرحلة التخطيط",
+  "description": "الحصول على جميع التصاريح",
   "isActive": true,
   "status": "COMPLETED",
   "progress": 100,
@@ -578,24 +621,26 @@ Content-Type: application/json
 }
 ```
 
-**Prüfpunkte (WICHTIG — Progress Cascade):**
-- [ ] **DB (Maßnahme):** `progress` der übergeordneten Maßnahme wird automatisch neu berechnet (gewichteter Durchschnitt aller Meilensteine)
-- [ ] **Spring Event:** `MilestoneProgressUpdatedEvent` wird ausgelöst
-- [ ] Alle Meilensteine einer Maßnahme auf `progress = 100` → Maßnahmen-`progress` = 100
+**نقاط التحقق (مهم — تتالي التقدم):**
+- [ ] **DB (الإجراء):** يُعاد حساب `progress` للإجراء الأب تلقائياً (متوسط مرجح لجميع المعالم)
+- [ ] **Spring Event:** `MilestoneProgressUpdatedEvent` يُطلق
+- [ ] جميع معالم الإجراء بـ `progress = 100` → `progress` الإجراء = 100
 
 ---
 
-## 9. Aufgaben
+## 9. المهام (Aufgaben)
 
-### 9.1 Neue Aufgabe anlegen
+### 9.1 إنشاء مهمة جديدة
 
 ```
 POST {{base_url}}/milestones/{{milestone_id}}/tasks
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Verkehrsgutachten beauftragen",
-  "description": "Gutachter auswählen und beauftragen",
+  "title": "طلب دراسة المرور",
+  "description": "اختيار خبير المرور وتكليفه",
   "priority": "HIGH",
   "startDate": "2026-04-01",
   "deadline": "2026-04-30",
@@ -603,17 +648,21 @@ Content-Type: application/json
 }
 ```
 
-> **Variable speichern:** `{{task_id}}`
+> **احفظ المتغير:** `{{task_id}}`
 
-### 9.2 Aufgabe aktualisieren (Fortschritts-Kaskade)
+---
+
+### 9.2 تحديث مهمة (تتالي التقدم)
 
 ```
 PUT {{base_url}}/tasks/{{task_id}}
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Verkehrsgutachten beauftragen",
-  "description": "Gutachter ausgewählt und beauftragt",
+  "title": "طلب دراسة المرور",
+  "description": "تم اختيار خبير المرور وتكليفه",
   "isActive": true,
   "status": "COMPLETED",
   "progress": 100,
@@ -624,17 +673,17 @@ Content-Type: application/json
 }
 ```
 
-**Prüfpunkte (WICHTIG — Progress Cascade):**
-- [ ] **DB (Meilenstein):** `progress` des übergeordneten Meilensteins automatisch neu berechnet
-- [ ] **DB (Maßnahme):** `progress` der Maßnahme darüber wird ebenfalls neu berechnet
-- [ ] **Spring Event:** `TaskProgressUpdatedEvent` → `MilestoneProgressUpdatedEvent` (Kette)
-- [ ] Kaskade: Aufgabe 100% → Meilenstein X% → Maßnahme Y%
+**نقاط التحقق (مهم — تتالي التقدم):**
+- [ ] **DB (المعلم):** يُعاد حساب `progress` للمعلم الأب تلقائياً
+- [ ] **DB (الإجراء):** يُعاد حساب `progress` للإجراء أعلاه
+- [ ] **Spring Events:** `TaskProgressUpdatedEvent` → `MilestoneProgressUpdatedEvent` (سلسلة)
+- [ ] التتالي: مهمة 100% → معلم X% → إجراء Y%
 
 ---
 
-## 10. Notizen
+## 10. الملاحظات (Notizen)
 
-### 10.1 Neue Notiz erstellen
+### 10.1 إنشاء ملاحظة جديدة
 
 ```
 POST {{base_url}}/resources/{{project_id}}/notes
@@ -642,66 +691,68 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 Content-Type: text/plain
 
-Dies ist eine Projektnotiz mit wichtigen Hinweisen zur Umsetzung.
+هذه ملاحظة مشروع تحتوي معلومات مهمة حول التنفيذ.
 ```
 
-> **Achtung:** Der Body ist **Freitext** (`text/plain`), kein JSON!
+> **تنبيه:** الـ Body نص حر (`text/plain`) وليس JSON!
 
-**Erwartete Antwort:** `201 Created`
+**الاستجابة المتوقعة:** `201 Created`
 ```json
 {
   "id": "uuid",
-  "content": "Dies ist eine Projektnotiz...",
+  "content": "هذه ملاحظة مشروع...",
   "resourceId": "{{project_id}}",
   "createdAt": "...",
-  "createdBy": "user-uuid"
+  "createdBy": "keycloak-user-uuid"
 }
 ```
 
-**Prüfpunkte:**
-- [ ] `resourceId` verweist auf das korrekte Projekt/Maßnahme/etc.
-- [ ] Notiz kann an jede Ressource angehängt werden (Sektor, Projekt, Konzept, Maßnahme, Meilenstein, Aufgabe)
+**نقاط التحقق:**
+- [ ] `resourceId` يشير إلى المورد الصحيح
+- [ ] يمكن إرفاق ملاحظة بأي مورد (قطاع، مشروع، مفهوم، إجراء، معلم، مهمة)
 
-> **Variable speichern:** `{{note_id}}`
+> **احفظ المتغير:** `{{note_id}}`
 
-### 10.2 Notizen auflisten / aktualisieren / löschen
+### 10.2 عرض / تحديث / حذف ملاحظات
 
 ```
 GET    {{base_url}}/resources/{{project_id}}/notes?page=0&size=20
-PUT    {{base_url}}/resources/{{project_id}}/notes/{{note_id}}    (Body: Freitext)
+PUT    {{base_url}}/resources/{{project_id}}/notes/{{note_id}}    (Body: نص حر)
 DELETE {{base_url}}/resources/{{project_id}}/notes/{{note_id}}
 ```
 
 ---
 
-## 11. Diagramme (Ressourcengebunden)
+## 11. المخططات المرفقة بالموارد (Diagramme)
 
-### 11.1 Neues Diagramm erstellen
+### 11.1 إنشاء مخطط جديد
 
 ```
 POST {{base_url}}/resources/{{project_id}}/diagrams
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
   "chartType": "BAR",
-  "config": "{\"labels\":[\"Erledigt\",\"Offen\"],\"datasets\":[{\"data\":[10,5]}]}"
+  "config": "{\"labels\":[\"منجز\",\"معلق\"],\"datasets\":[{\"data\":[10,5]}]}"
 }
 ```
 
-> **Variable speichern:** `{{diagram_id}}`
+> **احفظ المتغير:** `{{diagram_id}}`
 
-### 11.2 Diagramm-Konfiguration aktualisieren
+### 11.2 تحديث إعداد المخطط
 
 ```
 PUT {{base_url}}/resources/{{project_id}}/diagrams/{{diagram_id}}/config
 Content-Type: text/plain
 
-{"labels":["Erledigt","Offen","In Bearbeitung"],"datasets":[{"data":[10,5,3]}]}
+{"labels":["منجز","معلق","قيد التنفيذ"],"datasets":[{"data":[10,5,3]}]}
 ```
 
-> **Achtung:** Der Body ist **Freitext**, kein JSON-Objekt!
+> **تنبيه:** الـ Body نص حر وليس JSON Object!
 
-### 11.3 Auflisten / Löschen
+### 11.3 عرض / حذف
 
 ```
 GET    {{base_url}}/resources/{{project_id}}/diagrams?page=0&size=20
@@ -710,36 +761,39 @@ DELETE {{base_url}}/resources/{{project_id}}/diagrams/{{diagram_id}}
 
 ---
 
-## 12. Diagramm-Engine (Eigenständig)
+## 12. محرك الرسوم البيانية (Chart Engine — مستقل)
 
-### 12.1 Neues Chart erstellen
+### 12.1 إنشاء Chart جديد
 
 ```
 POST {{base_url}}/charts
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "title": "Aufgabenverteilung nach Status",
-  "description": "Übersicht aller Aufgaben im Mandanten",
+  "title": "توزيع المهام حسب الحالة",
+  "description": "نظرة عامة على جميع المهام",
   "chartType": "PIE",
   "chartData": "{\"labels\":[\"TODO\",\"IN_PROGRESS\",\"COMPLETED\"],\"datasets\":[{\"data\":[15,8,22]}]}"
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **DB (chart_configs):** Eintrag mit `chart_type`, `chart_data` (JSONB)
-- [ ] `chartData` muss gültiges JSON sein → ungültiges JSON → `400`
-- [ ] Ungültiger `chartType` → `400`
+**نقاط التحقق:**
+- [ ] **DB (chart_configs):** سجل بـ `chart_type`، `chart_data` (JSONB)
+- [ ] `chartData` يجب أن يكون JSON صالحاً → JSON غير صالح → `400`
+- [ ] `chartType` غير صالح → `400`
+- [ ] أنواع Charts المتاحة: `BAR`, `PIE`, `LINE`, `DOUGHNUT`, `RADAR`, `POLAR_AREA`, `BUBBLE`, `SCATTER`, `AREA`
 
-### 12.2 Charts auflisten (mit Filter)
+### 12.2 عرض Charts (مع فلتر)
 
 ```
-GET {{base_url}}/charts                    → Alle Charts
-GET {{base_url}}/charts?type=PIE           → Nur Kreisdiagramme
-GET {{base_url}}/charts/{{chart_id}}       → Einzelnes Chart
+GET {{base_url}}/charts               → جميع الـ Charts
+GET {{base_url}}/charts?type=PIE      → دوائر فقط
+GET {{base_url}}/charts/{{chart_id}}  → Chart واحد
 ```
 
-### 12.3 Chart aktualisieren / löschen
+### 12.3 تحديث / حذف
 
 ```
 PUT    {{base_url}}/charts/{{chart_id}}
@@ -748,9 +802,9 @@ DELETE {{base_url}}/charts/{{chart_id}}
 
 ---
 
-## 13. Anhänge (Dateien)
+## 13. المرفقات (Anhänge / Dateien)
 
-### 13.1 Datei hochladen
+### 13.1 رفع ملف
 
 ```
 POST {{base_url}}/resources/{{project_id}}/attachments
@@ -759,63 +813,65 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: multipart/form-data
 
 [Form-Data]
-file: (Datei auswählen)
+file: (اختر ملفاً)
 ```
 
-**In Postman:** Tab „Body" → „form-data" → Key = `file`, Type = `File`, Value = Datei auswählen.
+**في Postman:** تبويب Body → form-data → Key = `file`، Type = `File`، Value = اختر ملفاً.
 
-**Erwartete Antwort:** `201 Created`
+**الاستجابة المتوقعة:** `201 Created`
 ```json
 {
   "id": "uuid",
-  "fileName": "bericht.pdf",
+  "fileName": "تقرير.pdf",
   "fileType": "application/pdf",
   "downloadUrl": "...",
   "fileSize": 1048576,
   "mediaType": "DOCUMENT",
   "resourceId": "{{project_id}}",
   "createdAt": "...",
-  "createdBy": "user-uuid"
+  "createdBy": "keycloak-user-uuid"
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **MinIO:** Datei im Bucket `tenant-tenant_berlin` gespeichert
-- [ ] **DB (attachments):** Eintrag mit `file_path`, `file_size`, `media_type`
-- [ ] **DB (public.tenant_quotas):** `used_storage_bytes` um Dateigröße erhöht
-- [ ] **Bildverarbeitung:** JPEG/PNG-Upload → `mediaType = "IMAGE"`, Größe reduziert, EXIF entfernt
-- [ ] **Dokumenten-Upload:** PDF/DOCX → `mediaType = "DOCUMENT"`, keine Verarbeitung
-- [ ] **Fehlerfall:** Speicherkontingent erschöpft → `409 Conflict`
+**نقاط التحقق:**
+- [ ] **MinIO:** الملف محفوظ في Bucket `tenant-tenant_berlin` على `http://10.0.0.3:9002`
+- [ ] **DB (attachments):** سجل بـ `file_path`، `file_size`، `media_type`
+- [ ] **DB (public.tenant_quotas):** `used_storage_bytes` زاد بحجم الملف
+- [ ] **معالجة الصور:** رفع JPEG/PNG → `mediaType = "IMAGE"`، حجم مضغوط، بيانات EXIF محذوفة
+- [ ] **رفع مستند:** PDF/DOCX → `mediaType = "DOCUMENT"`، بدون معالجة
+- [ ] **خطأ:** استنفاد حصة التخزين → `409 Conflict`
 
-> **Variable speichern:** `{{attachment_id}}`
+> **احفظ المتغير:** `{{attachment_id}}`
 
-### 13.2 Datei herunterladen
+### 13.2 تحميل ملف
 
 ```
 GET {{base_url}}/resources/{{project_id}}/attachments/{{attachment_id}}/download
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 ```
 
-**Prüfpunkte:**
-- [ ] `Content-Disposition`-Header enthält originalen Dateinamen
-- [ ] `Content-Type` stimmt mit dem Dateityp überein
-- [ ] Dateiinhalt ist korrekt und vollständig
+**نقاط التحقق:**
+- [ ] هيدر `Content-Disposition` يحتوي اسم الملف الأصلي
+- [ ] `Content-Type` يتطابق مع نوع الملف
+- [ ] محتوى الملف صحيح وكامل
 
-### 13.3 Anhänge auflisten / löschen
+### 13.3 عرض / حذف مرفقات
 
 ```
 GET    {{base_url}}/resources/{{project_id}}/attachments?page=0&size=20
 DELETE {{base_url}}/resources/{{project_id}}/attachments/{{attachment_id}}
 ```
 
-**Prüfpunkte beim Löschen:**
-- [ ] **MinIO:** Datei aus dem Bucket entfernt
-- [ ] **DB (public.tenant_quotas):** `used_storage_bytes` um Dateigröße verringert
+**نقاط التحقق عند الحذف:**
+- [ ] **MinIO:** الملف محذوف من الـ Bucket
+- [ ] **DB (public.tenant_quotas):** `used_storage_bytes` انخفض بحجم الملف
 
 ---
 
-## 14. Benutzerprofil (Self-Service)
+## 14. ملف المستخدم — Self-Service
 
-### 14.1 Eigenes Profil erstellen
+### 14.1 إنشاء ملف شخصي
 
 ```
 POST {{base_url}}/profile/me
@@ -824,20 +880,20 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "firstName": "Max",
-  "lastName": "Mustermann",
-  "displayName": "M. Mustermann",
-  "department": "Stadtplanung",
-  "jobTitle": "Projektleiter",
+  "firstName": "أحمد",
+  "lastName": "المدير",
+  "displayName": "أ. المدير",
+  "department": "تخطيط المدينة",
+  "jobTitle": "مدير المشاريع",
   "employeeId": "EMP-001",
-  "officeLocation": "Rathaus, Zimmer 312",
-  "workEmail": "max.mustermann@berlin.de",
+  "officeLocation": "مبنى البلدية، غرفة 312",
+  "workEmail": "ahmed@berlin.de",
   "timezone": "Europe/Berlin",
   "phoneWork": "+49 30 12345678",
   "phoneMobile": "+49 170 1234567",
   "dateOfBirth": "1985-06-15",
   "gender": "MALE",
-  "bio": "Erfahrener Projektleiter im Bereich Stadtentwicklung",
+  "bio": "مدير مشاريع ذو خبرة في التنمية الحضرية",
   "employmentType": "FULL_TIME",
   "workAddress": {
     "street": "Rathausstraße 1",
@@ -849,49 +905,53 @@ Content-Type: application/json
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **DB (user_profiles):** Eintrag mit `keycloak_user_id` = UUID aus JWT
-- [ ] **DB:** `phone_work` und `phone_mobile` sind **verschlüsselt** gespeichert (nicht Klartext!)
-- [ ] **DB:** `personal_address`-Felder sind **verschlüsselt**
-- [ ] **DB (public.tenant_quotas):** `used_users` um 1 erhöht
-- [ ] Doppeltes Erstellen (gleicher Keycloak-User) → Fehler erwartet
-- [ ] **Fehlerfall:** `firstName` leer → `400 Bad Request`
+**نقاط التحقق:**
+- [ ] **DB (user_profiles):** سجل بـ `keycloak_user_id` = UUID من JWT
+- [ ] **DB:** `phone_work` و `phone_mobile` **مشفران** (ليس نصاً صريحاً!)
+- [ ] **DB:** حقول `personal_address` **مشفرة**
+- [ ] **DB (public.tenant_quotas):** `used_users` زاد بمقدار 1
+- [ ] إنشاء مكرر (نفس مستخدم Keycloak) → خطأ متوقع
+- [ ] **خطأ:** `firstName` فارغ → `400 Bad Request`
 
 ---
 
-### 14.2 Eigenes Profil abrufen
+### 14.2 استعلام الملف الشخصي الذاتي
 
 ```
 GET {{base_url}}/profile/me
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 ```
 
-**Prüfpunkte:**
-- [ ] `phoneWork` und `phoneMobile` werden **entschlüsselt** zurückgegeben
-- [ ] `avatarUrl` ist `null` wenn kein Avatar hochgeladen
+**نقاط التحقق:**
+- [ ] `phoneWork` و `phoneMobile` يُعادان **مفككَي التشفير**
+- [ ] `avatarUrl` = `null` إذا لم يُرفع صورة
 
 ---
 
-### 14.3 Eigenes Profil aktualisieren
+### 14.3 تحديث الملف الشخصي
 
 ```
 PUT {{base_url}}/profile/me
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "displayName": "Max M.",
+  "displayName": "أ. م.",
   "theme": "DARK",
-  "locale": "de",
-  "dateFormat": "dd.MM.yyyy",
+  "locale": "ar",
+  "dateFormat": "dd/MM/yyyy",
   "notificationEmail": true,
   "notificationInApp": true,
   "notificationSms": false,
   "notifyOnTaskAssignment": true,
   "notifyOnDeadlineApproaching": true,
   "digestFrequency": "DAILY",
-  "skills": ["Projektmanagement", "GIS", "Stadtplanung"],
+  "skills": ["إدارة المشاريع", "GIS", "تخطيط المدينة"],
   "languages": [
-    {"language": "Deutsch", "proficiencyLevel": "NATIVE"},
-    {"language": "Englisch", "proficiencyLevel": "FLUENT"}
+    {"language": "العربية", "proficiencyLevel": "NATIVE"},
+    {"language": "Deutsch", "proficiencyLevel": "FLUENT"}
   ],
   "certifications": [
     {
@@ -902,44 +962,46 @@ Content-Type: application/json
     }
   ],
   "socialLinks": [
-    {"platform": "LINKEDIN", "url": "https://linkedin.com/in/maxmustermann"}
+    {"platform": "LINKEDIN", "url": "https://linkedin.com/in/ahmed"}
   ]
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **DB (user_skills):** Einträge für Skills
-- [ ] **DB (user_languages):** Einträge mit `proficiency`
-- [ ] **DB (user_certifications):** Zertifizierung gespeichert
-- [ ] **DB (user_social_links):** Social Link gespeichert
-- [ ] `theme = DARK` wird korrekt gespeichert
-- [ ] Alle Felder sind optional (Teilaktualisierung)
+**نقاط التحقق:**
+- [ ] **DB (user_skills):** سجلات للمهارات
+- [ ] **DB (user_languages):** سجلات مع `proficiency`
+- [ ] **DB (user_certifications):** الشهادة محفوظة
+- [ ] **DB (user_social_links):** الرابط الاجتماعي محفوظ
+- [ ] `theme = DARK` محفوظ بشكل صحيح
+- [ ] جميع الحقول اختيارية (تحديث جزئي)
 
 ---
 
-### 14.4 Avatar hochladen / löschen
+### 14.4 رفع / حذف صورة الملف الشخصي
 
 ```
 POST   {{base_url}}/profile/me/avatar    (multipart/form-data, Key: file)
 DELETE {{base_url}}/profile/me/avatar
 ```
 
-**Prüfpunkte:**
-- [ ] **MinIO:** Avatar im Bucket gespeichert
-- [ ] **Bildverarbeitung:** Bild komprimiert, EXIF entfernt, max 1920×1080
-- [ ] **DB (public.tenant_quotas):** `used_storage_bytes` erhöht
-- [ ] Nach dem Löschen: `avatarUrl = null`
-- [ ] **Fehlerfall:** Speicherkontingent erschöpft → `409`
+**نقاط التحقق:**
+- [ ] **MinIO:** الصورة محفوظة في الـ Bucket
+- [ ] **معالجة الصورة:** مضغوطة، EXIF محذوف، أقصى 1920×1080
+- [ ] **DB (public.tenant_quotas):** `used_storage_bytes` زاد
+- [ ] بعد الحذف: `avatarUrl = null`
+- [ ] **خطأ:** استنفاد حصة التخزين → `409`
 
 ---
 
-### 14.5 Persönliches Dashboard
+### 14.5 لوحة التحكم الشخصية
 
 ```
 GET {{base_url}}/profile/me/dashboard
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:**
+**الاستجابة المتوقعة:**
 ```json
 {
   "myOpenTasks": [...],
@@ -955,57 +1017,57 @@ GET {{base_url}}/profile/me/dashboard
 }
 ```
 
-**Prüfpunkte:**
-- [ ] `myOpenTasks` enthält nur Aufgaben des angemeldeten Benutzers
-- [ ] `upcomingDeadlines` zeigt Fristen der nächsten 14 Tage
-- [ ] `recentActivity` basiert auf `audit_logs` des Benutzers
-- [ ] `stats` stimmt mit den Listen überein
+**نقاط التحقق:**
+- [ ] `myOpenTasks` تحتوي فقط مهام المستخدم المسجل
+- [ ] `upcomingDeadlines` تُظهر المواعيد النهائية خلال 14 يوماً القادمة
+- [ ] `recentActivity` مبني على `audit_logs` للمستخدم
+- [ ] `stats` يتطابق مع القوائم
 
 ---
 
-### 14.6 Ressourcen anheften / loslösen
+### 14.6 تثبيت / إلغاء تثبيت موارد
 
 ```
-POST   {{base_url}}/profile/me/pinned/{{project_id}}     → Anheften
-DELETE {{base_url}}/profile/me/pinned/{{project_id}}     → Loslösen
-GET    {{base_url}}/profile/me/pinned                    → Alle angehefteten
+POST   {{base_url}}/profile/me/pinned/{{project_id}}     → تثبيت
+DELETE {{base_url}}/profile/me/pinned/{{project_id}}     → إلغاء التثبيت
+GET    {{base_url}}/profile/me/pinned                    → جميع المثبتات
 ```
 
-**Prüfpunkte:**
-- [ ] **DB (user_pinned_resources):** Eintrag mit `resource_id` und `display_order`
-- [ ] Reihenfolge (`displayOrder`) wird korrekt vergeben
+**نقاط التحقق:**
+- [ ] **DB (user_pinned_resources):** سجل بـ `resource_id` و `display_order`
+- [ ] الترتيب (`displayOrder`) يُحدد بشكل صحيح
 
 ---
 
-## 15. Benutzerverzeichnis
+## 15. دليل المستخدمين
 
-### 15.1 Alle Profile auflisten
+### 15.1 عرض قائمة الملفات الشخصية
 
 ```
 GET {{base_url}}/profiles?page=0&size=20&sortBy=lastName
-GET {{base_url}}/profiles?department=Stadtplanung
+GET {{base_url}}/profiles?department=تخطيط المدينة
 ```
 
-**Prüfpunkte:**
-- [ ] Zusammenfassungs-DTOs (nicht vollständige Profile)
-- [ ] Filter nach Abteilung funktioniert
-- [ ] Nur Profile des eigenen Mandanten (Tenant-Isolation)
+**نقاط التحقق:**
+- [ ] ملخصات DTOs (ليس ملفات كاملة)
+- [ ] الفلتر حسب القسم يعمل
+- [ ] فقط ملفات المستأجر الحالي (عزل المستأجرين)
 
-### 15.2 Profil / Avatar abrufen
+### 15.2 استعلام ملف شخصي / صورة
 
 ```
 GET {{base_url}}/profiles/{{profile_id}}
 GET {{base_url}}/profile/{{profile_id}}/avatar
 ```
 
-**Prüfpunkte:**
-- [ ] Avatar-Antwort: `Content-Type: image/jpeg`, `Cache-Control: max-age=86400`
+**نقاط التحقق:**
+- [ ] رد الصورة: `Content-Type: image/jpeg`، `Cache-Control: max-age=86400`
 
 ---
 
-## 16. Mandanteneinstellungen
+## 16. إعدادات المستأجر (Tenant Settings)
 
-### 16.1 Einstellungen abrufen
+### 16.1 استعلام الإعدادات
 
 ```
 GET {{base_url}}/settings
@@ -1013,7 +1075,7 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `200 OK`
+**الاستجابة المتوقعة:** `200 OK`
 ```json
 {
   "id": "uuid",
@@ -1023,13 +1085,13 @@ X-Tenant-ID: {{tenant_id}}
 }
 ```
 
-**Prüfpunkte:**
-- [ ] Wenn kein Eintrag existiert → wird automatisch mit Standardwerten erstellt
-- [ ] Jeder authentifizierte Benutzer kann lesen
+**نقاط التحقق:**
+- [ ] إذا لم يوجد سجل → ينشأ تلقائياً بقيم افتراضية
+- [ ] أي مستخدم مصادق يمكنه القراءة
 
 ---
 
-### 16.2 Einstellungen aktualisieren (nur Tenant_Admin)
+### 16.2 تحديث الإعدادات (Tenant_Admin فقط)
 
 ```
 PUT {{base_url}}/settings
@@ -1044,25 +1106,25 @@ Content-Type: application/json
     "logoUrl": "/assets/logo.svg"
   },
   "terminologyDictionary": {
-    "Projekt": "Vorhaben",
-    "Maßnahme": "Initiative"
+    "Project": "مشروع",
+    "Measure": "إجراء"
   }
 }
 ```
 
-**Prüfpunkte (WICHTIG — 2FA-Durchsetzung):**
+**نقاط التحقق (مهم — تطبيق 2FA):**
 - [ ] **DB (tenant_settings):** `require_2fa = true`
-- [ ] **Keycloak (asynchron):** Alle Benutzer des Mandanten erhalten `CONFIGURE_TOTP` in `requiredActions`
-- [ ] **Spring Event:** `TwoFactorPolicyChangedEvent` wurde veröffentlicht
-- [ ] Zurücksetzen auf `require2fa: false` → `CONFIGURE_TOTP` wird bei Keycloak-Benutzern entfernt
-- [ ] Employee-Rolle → `403 Forbidden`
-- [ ] `themeConfig` und `terminologyDictionary` als JSONB gespeichert
+- [ ] **Keycloak (غير متزامن):** جميع مستخدمي المستأجر يحصلون على `CONFIGURE_TOTP` في `requiredActions`
+- [ ] **Spring Event:** `TwoFactorPolicyChangedEvent` نُشر
+- [ ] الرجوع إلى `require2fa: false` → `CONFIGURE_TOTP` يُزال من مستخدمي Keycloak
+- [ ] مستخدم عادي → `403 Forbidden`
+- [ ] `themeConfig` و `terminologyDictionary` محفوظان كـ JSONB
 
 ---
 
-## 17. Benutzerverwaltung (Tenant_Admin)
+## 17. إدارة المستخدمين (Tenant_Admin)
 
-### 17.1 Mandantenbenutzer auflisten
+### 17.1 عرض مستخدمي المستأجر
 
 ```
 GET {{base_url}}/users
@@ -1070,15 +1132,15 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `200 OK`
+**الاستجابة المتوقعة:** `200 OK`
 ```json
 [
   {
     "keycloakUserId": "uuid",
     "username": "user@example.com",
     "email": "user@example.com",
-    "firstName": "Max",
-    "lastName": "Mustermann",
+    "firstName": "أحمد",
+    "lastName": "المدير",
     "enabled": true,
     "emailVerified": true,
     "realmRoles": ["Tenant_Admin"],
@@ -1087,14 +1149,14 @@ X-Tenant-ID: {{tenant_id}}
 ]
 ```
 
-**Prüfpunkte:**
-- [ ] Nur Benutzer des eigenen Mandanten werden angezeigt
-- [ ] `realmRoles` enthält die korrekten Rollen
-- [ ] Employee-Rolle → `403 Forbidden`
+**نقاط التحقق:**
+- [ ] فقط مستخدمو المستأجر الحالي
+- [ ] `realmRoles` تحتوي الأدوار الصحيحة
+- [ ] مستخدم عادي → `403 Forbidden`
 
 ---
 
-### 17.2 Benutzer einladen
+### 17.2 دعوة مستخدم جديد
 
 ```
 POST {{base_url}}/users/invite
@@ -1103,38 +1165,40 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "email": "neuer.benutzer@berlin.de",
-  "firstName": "Neuer",
-  "lastName": "Benutzer",
+  "email": "مستخدم.جديد@berlin.de",
+  "firstName": "مستخدم",
+  "lastName": "جديد",
   "realmRole": null
 }
 ```
 
-**Erwartete Antwort:** `201 Created`
+**الاستجابة المتوقعة:** `201 Created`
 ```json
 {
   "keycloakUserId": "uuid",
-  "email": "neuer.benutzer@berlin.de",
+  "email": "مستخدم.جديد@berlin.de",
   "status": "PENDING_VERIFICATION"
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **Keycloak:** Neuer Benutzer mit `tenant_id`-Attribut erstellt
-- [ ] **DB (public.tenant_quotas):** `used_users` um 1 erhöht
-- [ ] Benutzer hat `requiredActions: ["UPDATE_PASSWORD", "VERIFY_EMAIL"]`
-- [ ] Doppelte E-Mail → `409 Conflict`
-- [ ] Kontingent erschöpft → `409 Conflict`
-- [ ] Employee-Rolle → `403 Forbidden`
+**نقاط التحقق:**
+- [ ] **Keycloak:** مستخدم جديد بخاصية `tenant_id`
+- [ ] **DB (public.tenant_quotas):** `used_users` زاد بمقدار 1
+- [ ] المستخدم لديه `requiredActions: ["UPDATE_PASSWORD", "VERIFY_EMAIL"]`
+- [ ] بريد إلكتروني مكرر → `409 Conflict`
+- [ ] استنفاد الحصة → `409 Conflict`
+- [ ] مستخدم عادي → `403 Forbidden`
 
-> **Variable speichern:** `{{invited_user_id}}` aus `keycloakUserId`
+> **احفظ المتغير:** `{{invited_user_id}}` من `keycloakUserId`
 
 ---
 
-### 17.3 Benutzer mit Rolle einladen
+### 17.3 دعوة مستخدم بدور محدد
 
 ```
 POST {{base_url}}/users/invite
+Authorization: Bearer {{token}}
+X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
@@ -1145,13 +1209,13 @@ Content-Type: application/json
 }
 ```
 
-**Prüfpunkte:**
-- [ ] Benutzer erhält `Tenant_Admin`-Rolle in Keycloak
-- [ ] `realmRole = "SUPER_ADMIN"` → Wird abgelehnt (Privilege Escalation Protection)
+**نقاط التحقق:**
+- [ ] المستخدم يحصل على دور `Tenant_Admin` في Keycloak
+- [ ] `realmRole = "SUPER_ADMIN"` → مرفوض (حماية من تصعيد الصلاحيات)
 
 ---
 
-### 17.4 Benutzer deaktivieren
+### 17.4 تعطيل مستخدم
 
 ```
 PUT {{base_url}}/users/{{invited_user_id}}/disable
@@ -1159,16 +1223,16 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `204 No Content`
+**الاستجابة المتوقعة:** `204 No Content`
 
-**Prüfpunkte:**
-- [ ] **Keycloak:** Benutzer `enabled = false`
-- [ ] Alle aktiven Sitzungen des Benutzers werden beendet
-- [ ] Benutzer eines anderen Mandanten → `403 Forbidden`
+**نقاط التحقق:**
+- [ ] **Keycloak:** المستخدم `enabled = false`
+- [ ] جميع جلسات المستخدم النشطة تُنهى
+- [ ] مستخدم من مستأجر آخر → `403 Forbidden`
 
 ---
 
-### 17.5 Benutzer aktivieren
+### 17.5 تفعيل مستخدم
 
 ```
 PUT {{base_url}}/users/{{invited_user_id}}/enable
@@ -1176,15 +1240,15 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `204 No Content`
+**الاستجابة المتوقعة:** `204 No Content`
 
-**Prüfpunkte:**
-- [ ] **Keycloak:** Benutzer `enabled = true`
-- [ ] Benutzer kann sich wieder anmelden
+**نقاط التحقق:**
+- [ ] **Keycloak:** المستخدم `enabled = true`
+- [ ] يمكن للمستخدم تسجيل الدخول مجدداً
 
 ---
 
-### 17.6 Passwort zurücksetzen
+### 17.6 إعادة تعيين كلمة المرور
 
 ```
 POST {{base_url}}/users/{{invited_user_id}}/reset-password
@@ -1192,15 +1256,15 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `204 No Content`
+**الاستجابة المتوقعة:** `204 No Content`
 
-**Prüfpunkte:**
-- [ ] **Keycloak:** E-Mail zur Passwortzurücksetzung wird an den Benutzer gesendet
-- [ ] Benutzer eines anderen Mandanten → `403 Forbidden`
+**نقاط التحقق:**
+- [ ] **Keycloak:** بريد إعادة تعيين كلمة المرور يُرسل للمستخدم
+- [ ] مستخدم من مستأجر آخر → `403 Forbidden`
 
 ---
 
-### 17.7 Realm-Rolle ändern
+### 17.7 تغيير دور Realm
 
 ```
 PUT {{base_url}}/users/{{invited_user_id}}/realm-role
@@ -1213,17 +1277,17 @@ Content-Type: application/json
 }
 ```
 
-**Erwartete Antwort:** `204 No Content`
+**الاستجابة المتوقعة:** `204 No Content`
 
-**Prüfpunkte:**
-- [ ] **Keycloak:** Alte Rolle entfernt, neue Rolle zugewiesen
-- [ ] `"role": null` → Alle zuweisbaren Rollen werden entfernt
-- [ ] `"role": "SUPER_ADMIN"` → `400 Bad Request` (nicht zuweisbar)
-- [ ] Benutzer eines anderen Mandanten → `403 Forbidden`
+**نقاط التحقق:**
+- [ ] **Keycloak:** الدور القديم محذوف، الدور الجديد مُضاف
+- [ ] `"role": null` → تُزال جميع الأدوار القابلة للتعيين
+- [ ] `"role": "SUPER_ADMIN"` → `400 Bad Request` (غير قابل للتعيين)
+- [ ] مستخدم من مستأجر آخر → `403 Forbidden`
 
 ---
 
-### 17.8 Benutzer löschen
+### 17.8 حذف مستخدم
 
 ```
 DELETE {{base_url}}/users/{{invited_user_id}}
@@ -1231,19 +1295,19 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `204 No Content`
+**الاستجابة المتوقعة:** `204 No Content`
 
-**Prüfpunkte:**
-- [ ] **Keycloak:** Benutzer vollständig gelöscht
-- [ ] **DB (public.tenant_quotas):** `used_users` um 1 verringert
-- [ ] Benutzer eines anderen Mandanten → `403 Forbidden`
-- [ ] Erneuter Abruf → Benutzer erscheint nicht mehr in der Liste
+**نقاط التحقق:**
+- [ ] **Keycloak:** المستخدم محذوف بالكامل
+- [ ] **DB (public.tenant_quotas):** `used_users` انخفض بمقدار 1
+- [ ] مستخدم من مستأجر آخر → `403 Forbidden`
+- [ ] لا يظهر المستخدم في القائمة بعد الحذف
 
 ---
 
-## 18. Rollen & Berechtigungen (Dynamische Rollen)
+## 18. الأدوار والصلاحيات (Dynamic RBAC)
 
-### 18.1 Dynamische Rolle erstellen
+### 18.1 إنشاء دور ديناميكي
 
 ```
 POST {{base_url}}/roles
@@ -1252,23 +1316,23 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "name": "Projektmanager",
-  "description": "Kann Projekte verwalten und Benutzer zuweisen",
+  "name": "مدير مشاريع",
+  "description": "يمكنه إدارة المشاريع وتعيين المستخدمين",
   "permissions": ["READ_PROJECT", "UPDATE_PROJECT", "CREATE_PROJECT", "ASSIGN_USERS"]
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **DB (dynamic_roles):** Neuer Eintrag
-- [ ] **DB (role_permissions):** 4 Einträge (eine pro Berechtigung)
-- [ ] Nur Tenant_Admin kann Rollen erstellen
-- [ ] Gültige Berechtigungen: `READ_PROJECT`, `CREATE_PROJECT`, `UPDATE_PROJECT`, `ASSIGN_USERS`, `DELETE_PROJECT`, `MANAGE_MEDIA`
+**نقاط التحقق:**
+- [ ] **DB (dynamic_roles):** سجل جديد
+- [ ] **DB (role_permissions):** 4 سجلات (واحد لكل صلاحية)
+- [ ] فقط `Tenant_Admin` يمكنه إنشاء الأدوار
+- [ ] الصلاحيات الصالحة: `READ_PROJECT`، `CREATE_PROJECT`، `UPDATE_PROJECT`، `ASSIGN_USERS`، `DELETE_PROJECT`، `MANAGE_MEDIA`
 
-> **Variable speichern:** Rollen-`id` als `{{role_id}}`
+> **احفظ المتغير:** `id` الدور في `{{role_id}}`
 
 ---
 
-### 18.2 Alle Rollen auflisten
+### 18.2 عرض قائمة الأدوار
 
 ```
 GET {{base_url}}/roles?page=0&size=20
@@ -1276,15 +1340,13 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `200 OK` (Paginiert)
-
-**Prüfpunkte:**
-- [ ] Nur Rollen des eigenen Mandanten
-- [ ] `permissions`-Liste korrekt pro Rolle
+**نقاط التحقق:**
+- [ ] فقط أدوار المستأجر الحالي
+- [ ] قائمة `permissions` صحيحة لكل دور
 
 ---
 
-### 18.3 Rolle aktualisieren
+### 18.3 تحديث دور
 
 ```
 PUT {{base_url}}/roles/{{role_id}}
@@ -1293,21 +1355,21 @@ X-Tenant-ID: {{tenant_id}}
 Content-Type: application/json
 
 {
-  "name": "Senior Projektmanager",
-  "description": "Erweiterte Rechte",
+  "name": "مدير مشاريع أول",
+  "description": "صلاحيات موسعة",
   "permissions": ["READ_PROJECT", "UPDATE_PROJECT", "CREATE_PROJECT", "ASSIGN_USERS", "DELETE_PROJECT", "MANAGE_MEDIA"]
 }
 ```
 
-**Erwartete Antwort:** `200 OK`
+**الاستجابة المتوقعة:** `200 OK`
 
-**Prüfpunkte:**
-- [ ] Name, Beschreibung und Berechtigungen aktualisiert
-- [ ] Employee-Rolle → `403 Forbidden`
+**نقاط التحقق:**
+- [ ] الاسم والوصف والصلاحيات محدثة
+- [ ] مستخدم عادي → `403 Forbidden`
 
 ---
 
-### 18.4 Rolle löschen
+### 18.4 حذف دور
 
 ```
 DELETE {{base_url}}/roles/{{role_id}}
@@ -1315,16 +1377,16 @@ Authorization: Bearer {{token}}
 X-Tenant-ID: {{tenant_id}}
 ```
 
-**Erwartete Antwort:** `204 No Content`
+**الاستجابة المتوقعة:** `204 No Content`
 
-**Prüfpunkte:**
-- [ ] **DB (dynamic_roles):** Eintrag gelöscht
-- [ ] **DB (role_assignments):** Alle Zuweisungen dieser Rolle werden ebenfalls gelöscht
-- [ ] Erneuter Abruf → Rolle erscheint nicht mehr
+**نقاط التحقق:**
+- [ ] **DB (dynamic_roles):** السجل محذوف
+- [ ] **DB (role_assignments):** جميع تعيينات هذا الدور محذوفة تلقائياً
+- [ ] لا يظهر الدور في القائمة بعد الحذف
 
 ---
 
-### 18.5 Rolle einer Ressource zuweisen
+### 18.5 إسناد دور لمورد
 
 ```
 POST {{base_url}}/resources/{{project_id}}/assignments
@@ -1339,24 +1401,24 @@ Content-Type: application/json
 }
 ```
 
-**Prüfpunkte:**
-- [ ] **DB (role_assignments):** Eintrag mit `user_id`, `role_id`, `resource_id`, `is_cascade`
-- [ ] `isCascade = true` → Berechtigung gilt auch für alle Kinder der Ressource
-- [ ] `isCascade = false` → Berechtigung gilt nur für diese Ressource
-- [ ] **Hierarchische Vererbung prüfen:** Zuweisung auf Projekt → Benutzer hat Zugriff auf Maßnahmen, Meilensteine, Aufgaben darunter
+**نقاط التحقق:**
+- [ ] **DB (role_assignments):** سجل بـ `user_id`، `role_id`، `resource_id`، `is_cascade`
+- [ ] `isCascade = true` → الصلاحية تسري على جميع العناصر الفرعية للمورد
+- [ ] `isCascade = false` → الصلاحية على هذا المورد فقط
+- [ ] **التحقق من الانتشار الهرمي:** إسناد على مشروع → المستخدم يملك صلاحية على الإجراءات والمعالم والمهام التابعة
 
 ---
 
-## 19. Super-Admin Endpunkte
+## 19. نقاط SUPER_ADMIN
 
-### 19.1 Alle Mandanten auflisten
+### 19.1 عرض جميع المستأجرين
 
 ```
 GET {{base_url}}/tenants?page=0&size=20
 Authorization: Bearer {{token_super_admin}}
 ```
 
-**Erwartete Antwort:** `200 OK` (Paginiert)
+**الاستجابة المتوقعة:** `200 OK` (صفحات)
 ```json
 {
   "content": [
@@ -1372,29 +1434,29 @@ Authorization: Bearer {{token_super_admin}}
 }
 ```
 
-**Prüfpunkte:**
-- [ ] Alle registrierten Mandanten werden angezeigt
-- [ ] Tenant_Admin → `403 Forbidden`
-- [ ] Paginierung funktioniert
+**نقاط التحقق:**
+- [ ] جميع المستأجرين المسجلين يظهرون
+- [ ] `Tenant_Admin` → `403 Forbidden`
+- [ ] الترقيم يعمل
 
 ---
 
-### 19.2 Benutzer eines Mandanten auflisten (Super-Admin)
+### 19.2 عرض مستخدمي مستأجر (Super-Admin)
 
 ```
 GET {{base_url}}/tenants/{{tenant_id}}/users
 Authorization: Bearer {{token_super_admin}}
 ```
 
-**Erwartete Antwort:** `200 OK` — Liste aller Keycloak-Benutzer des angegebenen Mandanten.
+**الاستجابة المتوقعة:** `200 OK` — قائمة مستخدمي Keycloak للمستأجر المحدد.
 
-**Prüfpunkte:**
-- [ ] Super-Admin kann Benutzer jedes Mandanten einsehen
-- [ ] Tenant_Admin → `403 Forbidden`
+**نقاط التحقق:**
+- [ ] Super-Admin يمكنه عرض مستخدمي أي مستأجر
+- [ ] `Tenant_Admin` → `403 Forbidden`
 
 ---
 
-### 19.3 Mandanten-Admin erstellen (Super-Admin)
+### 19.3 إنشاء Admin للمستأجر (Super-Admin)
 
 ```
 POST {{base_url}}/tenants/{{tenant_id}}/admin
@@ -1403,162 +1465,170 @@ Content-Type: application/json
 
 {
   "email": "admin@berlin.de",
-  "firstName": "Neuer",
-  "lastName": "Admin"
+  "firstName": "مدير",
+  "lastName": "برلين"
 }
 ```
 
-**Erwartete Antwort:** `201 Created`
+**الاستجابة المتوقعة:** `201 Created`
 
-**Prüfpunkte:**
-- [ ] **Keycloak:** Benutzer mit `Tenant_Admin`-Rolle und `tenant_id`-Attribut erstellt
-- [ ] **DB (public.tenant_quotas):** `used_users` um 1 erhöht
-- [ ] Doppelte E-Mail → `409 Conflict`
-- [ ] Tenant_Admin → `403 Forbidden`
+**نقاط التحقق:**
+- [ ] **Keycloak:** مستخدم بدور `Tenant_Admin` وخاصية `tenant_id`
+- [ ] **DB (public.tenant_quotas):** `used_users` زاد بمقدار 1
+- [ ] بريد مكرر → `409 Conflict`
+- [ ] `Tenant_Admin` → `403 Forbidden`
 
 ---
 
-## 20. Übergreifende Prüfungen
+## 20. الاختبارات الشاملة
 
-### 20.1 Tenant-Isolation (KRITISCH)
+### 20.1 عزل المستأجرين (حرج جداً)
 
-| Test | Erwartetes Ergebnis |
-|------|-------------------|
-| Anfrage ohne `X-Tenant-ID` | Kontext = `public`, nur öffentliche Daten |
-| Anfrage mit gültigem `X-Tenant-ID` | Nur Daten dieses Mandanten |
-| Anfrage mit fremdem `X-Tenant-ID` (JWT hat andere `tenant_id`) | `403 Forbidden` (TenantSecurityFilter) |
-| Anfrage mit nicht existierendem `X-Tenant-ID` | `404 Not Found` |
-| Anfrage mit suspendiertem `X-Tenant-ID` | `403 Forbidden` |
+| الاختبار | النتيجة المتوقعة |
+|----------|-----------------|
+| طلب بدون `X-Tenant-ID` | سياق `public`، بيانات عامة فقط |
+| طلب بـ `X-Tenant-ID` صالح | فقط بيانات هذا المستأجر |
+| طلب بـ `X-Tenant-ID` لمستأجر آخر (JWT بـ `tenant_id` مختلف) | `403 Forbidden` (TenantSecurityFilter) |
+| طلب بـ `X-Tenant-ID` لمستأجر غير موجود | `404 Not Found` |
+| طلب بـ `X-Tenant-ID` لمستأجر معلق | `403 Forbidden` |
 
-### 20.2 Audit-Logs
+---
 
-Nach jeder CREATE/UPDATE/DELETE-Operation:
+### 20.2 سجلات التدقيق (Audit Logs)
+
+بعد كل عملية CREATE/UPDATE/DELETE:
 ```sql
 SELECT * FROM tenant_berlin.audit_logs ORDER BY timestamp DESC LIMIT 5;
 ```
 
-**Prüfpunkte:**
-- [ ] `action_name` korrekt (z.B. `CREATE_SECTOR`, `UPDATE_PROFILE`)
-- [ ] `performed_by` = UUID des Benutzers
-- [ ] `ip_address` gesetzt
-- [ ] `timestamp` korrekt
-- [ ] Audit-Logs sind **unveränderlich**: `UPDATE` oder `DELETE` auf `audit_logs` → DB-Trigger verhindert dies
+**نقاط التحقق:**
+- [ ] `action_name` صحيح (مثال: `CREATE_SECTOR`، `UPDATE_PROFILE`)
+- [ ] `performed_by` = UUID المستخدم
+- [ ] `ip_address` محدد
+- [ ] `timestamp` صحيح
+- [ ] سجلات التدقيق **غير قابلة للتغيير**: `UPDATE` أو `DELETE` على `audit_logs` → trigger DB يمنع ذلك
 
-### 20.3 Verschlüsselung
+---
+
+### 20.3 التحقق من التشفير
 
 ```sql
--- Verschlüsselte Felder prüfen (sollten NICHT im Klartext sein):
+-- تحقق من الحقول المشفرة (يجب ألا تكون نصاً صريحاً):
 SELECT phone_work, phone_mobile FROM tenant_berlin.user_profiles;
 ```
 
-- [ ] Werte beginnen mit verschlüsseltem Präfix (nicht Klartext)
-- [ ] API gibt entschlüsselte Werte zurück
+- [ ] القيم مشفرة (لا تظهر كنص صريح)
+- [ ] الـ API تُعيد القيم مفككة التشفير
 
-### 20.4 Paginierung (alle Listen-Endpunkte)
+---
 
-| Parameter | Test |
-|-----------|------|
-| `page=0&size=5` | Maximal 5 Einträge |
-| `page=999` | Leere `content`-Liste, `totalElements` bleibt korrekt |
-| `size=0` | Fehler oder leere Liste |
-| `sortBy=title` | Alphabetisch sortiert |
-| `sortBy=createdAt` | Chronologisch sortiert |
+### 20.4 الترقيم (جميع نقاط القوائم)
 
-### 20.5 Validierung (alle POST/PUT-Endpunkte)
+| المعامل | الاختبار |
+|---------|---------|
+| `page=0&size=5` | 5 نتائج كحد أقصى |
+| `page=999` | قائمة `content` فارغة، `totalElements` صحيح |
+| `size=0` | خطأ أو قائمة فارغة |
+| `sortBy=title` | مرتب أبجدياً |
+| `sortBy=createdAt` | مرتب زمنياً |
 
-| Test | Erwartung |
-|------|-----------|
-| Pflichtfeld `title` = `""` | `400` mit `"title": "darf nicht leer sein"` |
-| Pflichtfeld `title` = `null` | `400` |
-| `priority` = `"INVALID"` | `400` |
-| `status` = `"INVALID"` | `400` |
-| JSON-Syntax-Fehler | `400` |
+---
 
-### 20.6 Deadline-Monitor
+### 20.5 التحقق من البيانات (جميع POST/PUT)
 
-Der `DeadlineMonitorService` läuft täglich um 00:00 Uhr (Cron):
+| الاختبار | التوقع |
+|---------|--------|
+| `title = ""` | `400` مع رسالة التحقق |
+| `title = null` | `400` |
+| `priority = "INVALID"` | `400` |
+| `status = "INVALID"` | `400` |
+| خطأ في صيغة JSON | `400` |
+
+---
+
+### 20.6 مراقب المواعيد النهائية (Deadline Monitor)
+
+`DeadlineMonitorService` يعمل يومياً عند 00:00 (Cron):
 ```sql
--- Überfällige Aufgaben/Meilensteine prüfen:
+-- فحص المهام/المعالم المتأخرة:
 SELECT id, title, status, deadline FROM tenant_berlin.tasks
 WHERE deadline < CURRENT_DATE AND status NOT IN ('COMPLETED', 'CANCELLED');
 ```
 
-- [ ] Diese Einträge sollten nach dem Cron-Lauf `status = 'OVERDUE'` haben
+- [ ] هذه السجلات يجب أن تحمل `status = 'OVERDUE'` بعد تشغيل الـ Cron
 
 ---
 
-## 21. Empfohlene Testreihenfolge
+## 21. ترتيب تنفيذ الاختبارات الموصى به
 
-Führen Sie die Tests in dieser Reihenfolge durch, da spätere Tests auf Daten früherer Tests aufbauen:
+نفذ الاختبارات بهذا الترتيب، إذ تعتمد الاختبارات اللاحقة على بيانات السابقة:
 
-1. **Mandant registrieren** (§ 3.1)
-2. **JWT-Token beschaffen** (§ 1.2)
-3. **Handlungsfeld anlegen** (§ 4.1) → `{{sector_id}}`
-4. **Projekt anlegen** (§ 5.1) → `{{project_id}}`
-5. **Konzept anlegen** (§ 6.1) → `{{concept_id}}`
-6. **Maßnahme anlegen** (§ 7.1) → `{{measure_id}}`
-7. **Meilenstein anlegen** (§ 8.1) → `{{milestone_id}}`
-8. **Aufgabe anlegen** (§ 9.1) → `{{task_id}}`
-9. **Fortschritts-Kaskade testen** (§ 9.2 → § 8.2 → § 7.2)
-10. **Notiz / Diagramm / Anhang** (§ 10–13)
-11. **Benutzerprofil** (§ 14)
-12. **Benutzerverwaltung** (§ 17) — Einladen, Deaktivieren, Aktivieren, Passwort zurücksetzen, Rolle ändern, Löschen
-13. **Rollen & Berechtigungen** (§ 18) — CRUD + Zuweisung
-14. **Super-Admin Endpunkte** (§ 19) — Mandantenübersicht, Benutzer einsehen, Admin erstellen
-15. **Mandanteneinstellungen + 2FA** (§ 16)
-16. **Mandant suspendieren / reaktivieren** (§ 3.4–3.5)
-17. **Übergreifende Prüfungen** (§ 20)
+1. **تسجيل مستأجر** (§ 3.1)
+2. **الحصول على JWT Token** (§ 1.2) — SUPER_ADMIN ثم Tenant_Admin
+3. **إنشاء قطاع** (§ 4.1) → `{{sector_id}}`
+4. **إنشاء مشروع** (§ 5.1) → `{{project_id}}`
+5. **إنشاء مفهوم** (§ 6.1) → `{{concept_id}}`
+6. **إنشاء إجراء** (§ 7.1) → `{{measure_id}}`
+7. **إنشاء معلم** (§ 8.1) → `{{milestone_id}}`
+8. **إنشاء مهمة** (§ 9.1) → `{{task_id}}`
+9. **اختبار تتالي التقدم** (§ 9.2 → § 8.2 → § 7.2)
+10. **ملاحظات / مخططات / مرفقات** (§ 10–13)
+11. **ملف المستخدم الشخصي** (§ 14)
+12. **إدارة المستخدمين** (§ 17) — دعوة، تعطيل، تفعيل، إعادة كلمة مرور، تغيير دور، حذف
+13. **الأدوار والصلاحيات** (§ 18) — CRUD + إسناد
+14. **نقاط SUPER_ADMIN** (§ 19) — عرض المستأجرين، مستخدمو المستأجر، إنشاء Admin
+15. **إعدادات المستأجر + 2FA** (§ 16)
+16. **تعليق / إعادة تفعيل المستأجر** (§ 3.4–3.5)
+17. **الاختبارات الشاملة** (§ 20)
 
 ---
 
-## 22. Postman-Collection-Struktur
-
-Empfohlene Ordnerstruktur in Postman:
+## 22. هيكل Collection المقترح في Postman
 
 ```
-📁 Planour REST API
-├── 📁 00 – Setup
-│   ├── Token holen (user_berlin / Tenant_Admin)
-│   ├── Token holen (user_munich / Employee)
-│   ├── Token holen (Super Admin / Client Credentials)
-│   └── Mandant registrieren
-├── 📁 01 – Handlungsfelder (CRUD)
-├── 📁 02 – Projekte (CRUD)
-├── 📁 03 – Konzepte (CRUD)
-├── 📁 04 – Maßnahmen (CRUD + SDGs + Progress)
-├── 📁 05 – Meilensteine (CRUD + Progress Cascade)
-├── 📁 06 – Aufgaben (CRUD + Progress Cascade)
-├── 📁 07 – Notizen
-├── 📁 08 – Diagramme (Ressource)
-├── 📁 09 – Diagramm-Engine
-├── 📁 10 – Anhänge (Upload + Download + Bildverarbeitung)
-├── 📁 11 – Benutzerprofil (Self-Service)
-├── 📁 12 – Benutzerverzeichnis
-├── 📁 13 – Benutzerverwaltung (Tenant_Admin)
-│   ├── GET Benutzer auflisten
-│   ├── POST Benutzer einladen
-│   ├── POST Benutzer einladen (mit Rolle)
-│   ├── PUT Benutzer deaktivieren
-│   ├── PUT Benutzer aktivieren
-│   ├── POST Passwort zurücksetzen
-│   ├── PUT Realm-Rolle ändern
-│   └── DELETE Benutzer löschen
-├── 📁 14 – Rollen & Berechtigungen
-│   ├── POST Rolle erstellen
-│   ├── GET Rollen auflisten
-│   ├── PUT Rolle aktualisieren
-│   ├── DELETE Rolle löschen
-│   └── POST Rolle zuweisen
-├── 📁 15 – Super-Admin
-│   ├── GET Alle Mandanten auflisten
-│   ├── GET Mandantenbenutzer auflisten
-│   └── POST Mandanten-Admin erstellen
-├── 📁 16 – Mandanteneinstellungen (+ 2FA)
-├── 📁 17 – Mandantenkontingent
-├── 📁 18 – Mandanten-Lebenszyklus (Suspend/Reactivate)
-└── 📁 19 – Übergreifende Tests
-    ├── Tenant-Isolation
-    ├── Validierungsfehler
-    ├── Berechtigungsprüfung
-    └── Verschlüsselungsprüfung
+📁 Planour REST API — Staging
+├── 📁 00 – الإعداد
+│   ├── Token — SUPER_ADMIN
+│   ├── Token — Tenant_Admin
+│   ├── Token — مستخدم عادي
+│   └── تسجيل مستأجر
+├── 📁 01 – القطاعات (CRUD)
+├── 📁 02 – المشاريع (CRUD)
+├── 📁 03 – المفاهيم (CRUD)
+├── 📁 04 – الإجراءات (CRUD + SDGs + تقدم)
+├── 📁 05 – المعالم (CRUD + تتالي التقدم)
+├── 📁 06 – المهام (CRUD + تتالي التقدم)
+├── 📁 07 – الملاحظات
+├── 📁 08 – المخططات المرفقة
+├── 📁 09 – محرك الرسوم البيانية
+├── 📁 10 – المرفقات (رفع + تحميل + معالجة الصور)
+├── 📁 11 – الملف الشخصي (Self-Service)
+├── 📁 12 – دليل المستخدمين
+├── 📁 13 – إدارة المستخدمين (Tenant_Admin)
+│   ├── GET عرض المستخدمين
+│   ├── POST دعوة مستخدم
+│   ├── POST دعوة مستخدم (بدور)
+│   ├── PUT تعطيل مستخدم
+│   ├── PUT تفعيل مستخدم
+│   ├── POST إعادة كلمة المرور
+│   ├── PUT تغيير دور Realm
+│   └── DELETE حذف مستخدم
+├── 📁 14 – الأدوار والصلاحيات
+│   ├── POST إنشاء دور
+│   ├── GET عرض الأدوار
+│   ├── PUT تحديث دور
+│   ├── DELETE حذف دور
+│   └── POST إسناد دور لمورد
+├── 📁 15 – SUPER_ADMIN
+│   ├── GET جميع المستأجرين
+│   ├── GET مستخدمو مستأجر
+│   └── POST إنشاء Admin للمستأجر
+├── 📁 16 – إعدادات المستأجر (+ 2FA)
+├── 📁 17 – حصص المستأجر
+├── 📁 18 – دورة حياة المستأجر (Suspend/Reactivate)
+└── 📁 19 – اختبارات شاملة
+    ├── عزل المستأجرين
+    ├── أخطاء التحقق
+    ├── فحص الصلاحيات
+    └── فحص التشفير
 ```
