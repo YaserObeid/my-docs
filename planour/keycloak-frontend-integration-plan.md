@@ -1,34 +1,37 @@
 # خطة التكامل الكامل: إدارة المستخدمين من الواجهات الأمامية
 
 > الهدف: الاستغناء عن Keycloak Admin Console بالكامل وتنفيذ جميع العمليات من الواجهات الأمامية.
+>
+> **آخر تحديث:** 2026-03-20 | **الحالة:** ✅ Backend مكتمل بالكامل (جميع المراحل 1-3 منجزة)
 
 ---
 
 ## الوضع الحالي
 
-### ما هو موجود ويعمل:
+### جميع العمليات منجزة ✅
+
 | العملية | الواجهة | الحالة |
 |---------|---------|--------|
-| تسجيل مستأجر جديد | Super Admin | موجود |
-| تعليق/تفعيل مستأجر | Super Admin | موجود |
-| إدارة حصص المستأجر (Quota) | Super Admin | موجود |
-| إنشاء Profile شخصي | المستخدم نفسه | موجود |
-| تعديل Profile شخصي | المستخدم نفسه | موجود |
-| إنشاء أدوار مخصصة | Tenant Admin | موجود |
-| تعيين أدوار على موارد | Tenant Admin | موجود |
-| تفعيل/تعطيل 2FA (على مستوى المستأجر) | Tenant Admin | موجود |
-| عرض قائمة الـ Profiles | أي مستخدم | موجود |
-
-### ما هو مفقود:
-| العملية | الأولوية |
-|---------|---------|
-| دعوة مستخدم جديد (إنشاء في Keycloak) | حرجة |
-| عرض مستخدمي المستأجر من Keycloak | حرجة |
-| تعطيل/تفعيل مستخدم فردي | عالية |
-| حذف مستخدم | عالية |
-| إعادة تعيين كلمة مرور | عالية |
-| تغيير أدوار Keycloak لمستخدم | متوسطة |
-| عرض/إنهاء الجلسات النشطة | متوسطة |
+| تسجيل مستأجر جديد | Super Admin | ✅ منجز |
+| تعليق/تفعيل مستأجر | Super Admin | ✅ منجز |
+| إدارة حصص المستأجر (Quota) | Super Admin | ✅ منجز |
+| عرض جميع المستأجرين | Super Admin | ✅ منجز |
+| عرض مستخدمي أي مستأجر | Super Admin | ✅ منجز |
+| إنشاء Tenant Admin لمستأجر | Super Admin | ✅ منجز |
+| إنشاء Profile شخصي | المستخدم نفسه | ✅ منجز |
+| تعديل Profile شخصي | المستخدم نفسه | ✅ منجز |
+| إنشاء أدوار مخصصة | Tenant Admin | ✅ منجز |
+| عرض/تعديل/حذف أدوار مخصصة | Tenant Admin | ✅ منجز |
+| تعيين أدوار على موارد | Tenant Admin | ✅ منجز |
+| تفعيل/تعطيل 2FA (على مستوى المستأجر) | Tenant Admin | ✅ منجز |
+| عرض قائمة الـ Profiles | أي مستخدم | ✅ منجز |
+| دعوة مستخدم جديد (إنشاء في Keycloak) | Tenant Admin | ✅ منجز |
+| عرض مستخدمي المستأجر من Keycloak | Tenant Admin | ✅ منجز |
+| تعطيل/تفعيل مستخدم فردي | Tenant Admin | ✅ منجز |
+| حذف مستخدم | Tenant Admin | ✅ منجز |
+| إعادة تعيين كلمة مرور | Tenant Admin | ✅ منجز |
+| تغيير أدوار Keycloak لمستخدم | Tenant Admin | ✅ منجز |
+| عرض/إنهاء الجلسات النشطة | Tenant Admin | ✅ منجز |
 
 ---
 
@@ -96,9 +99,9 @@ Realm Role: SUPER_ADMIN
 
 ## خطة التنفيذ
 
-### المرحلة 1: إدارة المستخدمين (Backend Endpoints)
+### المرحلة 1: إدارة المستخدمين (Backend Endpoints) ✅
 
-> الأساس الذي تبنى عليه جميع واجهات إدارة المستخدمين.
+> الأساس الذي تبنى عليه جميع واجهات إدارة المستخدمين. — **✅ منجز بالكامل**
 
 #### 1.1 دعوة مستخدم جديد (Tenant Admin)
 ```
@@ -202,7 +205,7 @@ Backend Flow:
 
 ---
 
-### المرحلة 2: إدارة الأدوار الموسعة (Backend Endpoints)
+### المرحلة 2: إدارة الأدوار الموسعة (Backend Endpoints) ✅
 
 #### 2.1 تغيير Realm Role لمستخدم (Tenant Admin)
 ```
@@ -253,7 +256,7 @@ Backend Flow:
 
 ---
 
-### المرحلة 3: إدارة الجلسات والأمان
+### المرحلة 3: إدارة الجلسات والأمان ✅
 
 #### 3.1 عرض الجلسات النشطة لمستخدم (Tenant Admin)
 ```
@@ -286,7 +289,7 @@ Backend Flow:
 
 ---
 
-### المرحلة 4: عمليات Super Admin
+### المرحلة 4: عمليات Super Admin ✅
 
 #### 4.1 عرض جميع المستأجرين (Super Admin)
 ```
@@ -324,22 +327,22 @@ Backend Flow:
 
 ---
 
-## ملخص: توزيع العمليات على الواجهات
+## ملخص: توزيع العمليات على الواجهات — ✅ جميع الـ Endpoints منجزة
 
 ### واجهة Super Admin
 
 ```
 Super Admin Dashboard
 ├── إدارة المستأجرين
-│   ├── عرض جميع المستأجرين (الحالة، الحصص، عدد المستخدمين)
-│   ├── تسجيل مستأجر جديد ← POST /api/v1/tenants/register (موجود)
-│   ├── تعليق مستأجر ← PUT /api/v1/tenants/{id}/suspend (موجود)
-│   ├── إعادة تفعيل مستأجر ← PUT /api/v1/tenants/{id}/reactivate (موجود)
-│   ├── تعديل حصص المستأجر ← PUT /api/v1/tenants/{id}/quota (موجود)
-│   └── عرض مستخدمي مستأجر ← GET /api/v1/tenants/{id}/users (جديد)
+│   ├── عرض جميع المستأجرين (الحالة، الحصص، عدد المستخدمين) ← GET /api/v1/tenants           ✅
+│   ├── تسجيل مستأجر جديد ← POST /api/v1/tenants/register                                   ✅
+│   ├── تعليق مستأجر ← PUT /api/v1/tenants/{id}/suspend                                     ✅
+│   ├── إعادة تفعيل مستأجر ← PUT /api/v1/tenants/{id}/reactivate                             ✅
+│   ├── تعديل حصص المستأجر ← PUT /api/v1/tenants/{id}/quota                                  ✅
+│   └── عرض مستخدمي مستأجر ← GET /api/v1/tenants/{id}/users                                  ✅
 │
 └── إدارة مسؤولي المستأجرين
-    └── إنشاء Tenant Admin ← POST /api/v1/tenants/{id}/admin (جديد)
+    └── إنشاء Tenant Admin ← POST /api/v1/tenants/{id}/admin                                  ✅
 ```
 
 ### واجهة Tenant Admin
@@ -347,67 +350,67 @@ Super Admin Dashboard
 ```
 Tenant Admin Panel
 ├── إدارة المستخدمين
-│   ├── عرض مستخدمي المستأجر ← GET /api/v1/users (جديد)
-│   ├── دعوة مستخدم جديد ← POST /api/v1/users/invite (جديد)
-│   ├── تعطيل مستخدم ← PUT /api/v1/users/{id}/disable (جديد)
-│   ├── تفعيل مستخدم ← PUT /api/v1/users/{id}/enable (جديد)
-│   ├── حذف مستخدم ← DELETE /api/v1/users/{id} (جديد)
-│   ├── إعادة تعيين كلمة مرور ← POST /api/v1/users/{id}/reset-password (جديد)
-│   └── عرض/إنهاء الجلسات ← GET/DELETE /api/v1/users/{id}/sessions (جديد)
+│   ├── عرض مستخدمي المستأجر ← GET /api/v1/users                                             ✅
+│   ├── دعوة مستخدم جديد ← POST /api/v1/users/invite                                         ✅
+│   ├── تعطيل مستخدم ← PUT /api/v1/users/{id}/disable                                        ✅
+│   ├── تفعيل مستخدم ← PUT /api/v1/users/{id}/enable                                         ✅
+│   ├── حذف مستخدم ← DELETE /api/v1/users/{id}                                               ✅
+│   ├── إعادة تعيين كلمة مرور ← POST /api/v1/users/{id}/reset-password                        ✅
+│   └── عرض/إنهاء الجلسات ← GET/DELETE /api/v1/users/{id}/sessions                            ✅
 │
 ├── إدارة الأدوار
-│   ├── إنشاء دور مخصص ← POST /api/v1/roles (موجود)
-│   ├── عرض الأدوار ← GET /api/v1/roles (جديد)
-│   ├── تعديل دور ← PUT /api/v1/roles/{id} (جديد)
-│   ├── حذف دور ← DELETE /api/v1/roles/{id} (جديد)
-│   ├── تعيين دور على مورد ← POST /api/v1/resources/{id}/assignments (موجود)
-│   └── تغيير Realm Role لمستخدم ← PUT /api/v1/users/{id}/realm-role (جديد)
+│   ├── إنشاء دور مخصص ← POST /api/v1/roles                                                  ✅
+│   ├── عرض الأدوار ← GET /api/v1/roles                                                      ✅
+│   ├── تعديل دور ← PUT /api/v1/roles/{id}                                                   ✅
+│   ├── حذف دور ← DELETE /api/v1/roles/{id}                                                  ✅
+│   ├── تعيين دور على مورد ← POST /api/v1/resources/{id}/assignments                          ✅
+│   └── تغيير Realm Role لمستخدم ← PUT /api/v1/users/{id}/realm-role                          ✅
 │
 └── إعدادات المستأجر
-    ├── عرض الإعدادات ← GET /api/v1/settings (موجود)
-    └── تحديث الإعدادات (2FA, Theme) ← PUT /api/v1/settings (موجود)
+    ├── عرض الإعدادات ← GET /api/v1/settings                                                  ✅
+    └── تحديث الإعدادات (2FA, Theme) ← PUT /api/v1/settings                                   ✅
 ```
 
 ---
 
-## ترتيب التنفيذ المقترح
+## ترتيب التنفيذ — ✅ مكتمل بالكامل
 
 ```
-المرحلة 1 (حرجة) ─ إدارة المستخدمين الأساسية
+المرحلة 1 (حرجة) ─ إدارة المستخدمين الأساسية                    ✅ منجز
 │
-├── Sprint 1: إنشاء UserManagementController + KeycloakUserService
-│   ├── POST /api/v1/users/invite
-│   ├── GET  /api/v1/users
-│   └── Tests
+├── Sprint 1: إنشاء UserManagementController + KeycloakUserService ✅
+│   ├── POST /api/v1/users/invite                                  ✅
+│   ├── GET  /api/v1/users                                         ✅
+│   └── Tests                                                      ✅
 │
-├── Sprint 2: عمليات المستخدم الفردي
-│   ├── PUT    /api/v1/users/{id}/disable
-│   ├── PUT    /api/v1/users/{id}/enable
-│   ├── DELETE /api/v1/users/{id}
-│   ├── POST   /api/v1/users/{id}/reset-password
-│   └── Tests
+├── Sprint 2: عمليات المستخدم الفردي                               ✅
+│   ├── PUT    /api/v1/users/{id}/disable                          ✅
+│   ├── PUT    /api/v1/users/{id}/enable                           ✅
+│   ├── DELETE /api/v1/users/{id}                                  ✅
+│   ├── POST   /api/v1/users/{id}/reset-password                   ✅
+│   └── Tests                                                      ✅
 │
-└── Sprint 3: واجهة Super Admin
-    ├── GET  /api/v1/tenants (قائمة المستأجرين)
-    ├── GET  /api/v1/tenants/{id}/users
-    ├── POST /api/v1/tenants/{id}/admin
-    └── Tests
+└── Sprint 3: واجهة Super Admin                                    ✅
+    ├── GET  /api/v1/tenants (قائمة المستأجرين)                    ✅
+    ├── GET  /api/v1/tenants/{id}/users                            ✅
+    ├── POST /api/v1/tenants/{id}/admin                            ✅
+    └── Tests                                                      ✅
 
-المرحلة 2 (عالية) ─ الأدوار الموسعة
+المرحلة 2 (عالية) ─ الأدوار الموسعة                               ✅ منجز
 │
-├── Sprint 4: CRUD كامل للأدوار
-│   ├── GET    /api/v1/roles
-│   ├── PUT    /api/v1/roles/{id}
-│   ├── DELETE /api/v1/roles/{id}
-│   ├── PUT    /api/v1/users/{id}/realm-role
-│   └── Tests
+├── Sprint 4: CRUD كامل للأدوار                                    ✅
+│   ├── GET    /api/v1/roles                                       ✅
+│   ├── PUT    /api/v1/roles/{id}                                  ✅
+│   ├── DELETE /api/v1/roles/{id}                                  ✅
+│   ├── PUT    /api/v1/users/{id}/realm-role                       ✅
+│   └── Tests                                                      ✅
 │
-المرحلة 3 (متوسطة) ─ الأمان المتقدم
+المرحلة 3 (متوسطة) ─ الأمان المتقدم                               ✅ منجز
 │
-├── Sprint 5: الجلسات
-│   ├── GET    /api/v1/users/{id}/sessions
-│   ├── DELETE /api/v1/users/{id}/sessions
-│   └── Tests
+├── Sprint 5: الجلسات                                              ✅
+│   ├── GET    /api/v1/users/{id}/sessions                         ✅
+│   ├── DELETE /api/v1/users/{id}/sessions                         ✅
+│   └── Tests                                                      ✅
 ```
 
 ---

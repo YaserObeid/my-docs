@@ -1,8 +1,8 @@
 
 # Planour REST API — وثيقة التوصيف المعماري والتقني
-> **آخر تحديث:** 2026-03-13 | **الإصدار:** `0.0.1-SNAPSHOT` | **المنظور:** Principal Engineer
+> **آخر تحديث:** 2026-03-20 | **الإصدار:** `0.0.1-SNAPSHOT` | **المنظور:** Principal Engineer
 >
-> **آخر إضافة:** إدارة دورة حياة المستأجر — Soft Delete & Deactivation (`infrastructure/multitenancy/tenant/` — TenantLifecycleService + Suspend/Reactivate + Keycloak User Management)
+> **آخر إضافة:** تحديث شامل — CI/CD Pipeline (7 مراحل: test → build → deploy-staging → integration-test → contract-test → promote → deploy-prod) + اختبارات تكامل Python (pytest) + اختبارات عقود API (Schemathesis) + توثيق بنية النشر
 
 ---
 
@@ -91,6 +91,8 @@ PostgreSQL Instance
 - `tenants/V5` → محرك الرسوم البيانية (`chart_configs`)
 - `tenants/V6` → ✅ تحديث كيانات الإدارة + جداول الوسائط + أهداف التنمية المستدامة + حذف `municipality_config`
 - `tenants/V7` → ✅ جدول `user_profiles` + جداول مساعدة (skills, languages, certifications, social_links, pinned_resources)
+- `tenants/V8` → ✅ توسعات ملف المستخدم (`user_profile_extensions`)
+- `tenants/V9` → ✅ مهارات المستخدم (`user_profile_skills`)
 - `tenants/V10` → ✅ جدول `tenant_settings` (Single-Row per tenant) + حقل `custom_attributes` (JSONB) لجداول: projects, tasks, measures, milestones
 
 ### تسجيل المستأجرين ✅
@@ -414,12 +416,29 @@ tenant_settings        (id, require_2fa, theme_config JSONB, terminology_diction
 | Tenant-Config (Integration) | 1 اختبار تكامل | TenantSettingsIntegrationTest (MockMvc + JWT + Tenant — 3 حالات) |
 | Infrastructure (Keycloak Admin) | 1 اختبار وحدة | KeycloakTenantManagementServiceTest (6 حالات: enforce/revoke 2FA + idempotency + suspend/reactivate users) |
 | Infrastructure (Tenant Lifecycle) | 2 اختبار وحدة | TenantLifecycleServiceTest (5 حالات: suspend/reactivate + حالات خطأ) + TenantLifecycleEventListenerTest (2 حالة: delegate to Keycloak) |
-| **الإجمالي** | **209 اختبار (48+ ملف اختبار)** | — |
+| **الإجمالي** | **55 ملف اختبار Java** | — |
 
-**CI/CD Pipeline (GitLab):**
+### اختبارات التكامل الخارجية (Python pytest) ✅
+
+| النطاق | الملف | الأدوات |
+|--------|-------|---------|
+| Business Logic + RBAC + Tenant Isolation | `tests/integration/test_planour.py` | pytest + requests — يعمل ضد بيئة Staging |
+
+### اختبارات العقود (Contract Tests — Schemathesis) ✅
+
+| النطاق | الأدوات | الوصف |
+|--------|---------|-------|
+| API Schema Validation | Schemathesis | Property-based testing — التحقق من توافق API مع مواصفة OpenAPI + اختبار حالات حدية ونمطية |
+
+**CI/CD Pipeline (GitLab) — 7 مراحل:**
 ```
-build_job → compile + test-compile (eclipse-temurin:25-jdk)
-test_job  → mvn test (Docker-in-Docker for Testcontainers)
+test            → mvn test (Docker-in-Docker for Testcontainers, eclipse-temurin:25-jdk)
+build           → Paketo Buildpacks (Cloud-Native Image, Java 25)
+deploy-staging  → نشر على VPS2 (Port 8083) + Health Check (/actuator/health)
+integration-test → pytest ضد بيئة Staging (Business Logic + RBAC + Tenant Isolation)
+contract-test   → Schemathesis (Property-Based API Contract Testing)
+promote         → GitLab Template Promotion
+deploy-prod     → نشر يدوي على الإنتاج (Port 8080)
 ```
 
 ---
@@ -613,7 +632,8 @@ test_job  → mvn test (Docker-in-Docker for Testcontainers)
 ██████████████████████████████ Keycloak Admin Client (2FA Enforcement)   ✅ 100%
 ██████████████████████████████ محرك الصلاحيات (Authorization)            ✅ 100%
 ██████████████████████████████ سجلات التدقيق (Audit)                    ✅ 100%
-██████████████████████████████ CI/CD Pipeline                            ✅ 100%
+██████████████████████████████ CI/CD Pipeline (7 مراحل)                  ✅ 100%
+██████████████████████████████ النشر والتشغيل (Deployment)               ✅ 100%
 ██████████████████████████████ محرك الرسوم البيانية (Chart-Engine)        ✅ 100%
 ██████████████████████████████ التخزين الكائني (MinIO Storage)          ✅ 100%
 ██████████████████████████████ موديول الإدارة (Management)              ✅ 100%
@@ -1006,6 +1026,73 @@ PUT /api/v1/tenants/{tenantId}/suspend (SUPER_ADMIN)
 | `TenantLifecycleServiceTest.java` | 5 اختبارات: suspend نجاح، suspend مكرر (exception)، suspend غير موجود (exception)، reactivate نجاح، reactivate مكرر (exception) |
 | `TenantLifecycleEventListenerTest.java` | 2 اختبار: delegate suspend/reactivate إلى Keycloak |
 | `KeycloakTenantManagementServiceTest.java` | +2 اختبار: suspendTenantUsers (disable + logout)، reactivateTenantUsers (enable) |
+
+---
+
+## 17E. بنية النشر والتشغيل (Deployment Configuration) ✅
+
+> **الحالة:** ✅ منجز — CI/CD Pipeline كامل (7 مراحل) + Paketo Buildpacks + بيئات Staging و Production
+
+### 17E.1. بناء الصور (Image Building)
+
+| البند | التفصيل |
+|-------|--------|
+| **التقنية** | Paketo Buildpacks (Cloud-Native) |
+| **JDK** | Eclipse Temurin 25 |
+| **المنفذ** | 8080 (داخل الحاوية) |
+| **الذاكرة** | 1GB |
+| **المعالج** | 1.0 Core |
+
+### 17E.2. بيئات النشر
+
+| البيئة | المنفذ | الوصف |
+|--------|--------|-------|
+| **Staging** (VPS2) | 8083 | نشر تلقائي بعد البناء — تُجرى عليه اختبارات التكامل والعقود |
+| **Production** (VPS3) | 8080 | نشر يدوي — بعد اجتياز جميع الاختبارات والترقية |
+
+### 17E.3. ملفات النشر
+
+| الملف | الموقع | الوظيفة |
+|-------|--------|---------|
+| `.env` | `deploy/vps3/` | متغيرات البيئة للإنتاج |
+| `.env.example` | `deploy/vps3/` | قالب متغيرات البيئة (مرجع) |
+| `realm-planour.json` | `deploy/vps3/` | إعدادات Keycloak Realm للإنتاج |
+
+### 17E.4. متغيرات البيئة المطلوبة
+
+```
+# PostgreSQL
+DB_URL, DB_USERNAME, DB_PASSWORD
+
+# Keycloak
+KEYCLOAK_ISSUER_URI, KEYCLOAK_ADMIN_URL, KEYCLOAK_REALM
+KEYCLOAK_ADMIN_CLIENT_ID, KEYCLOAK_ADMIN_CLIENT_SECRET
+
+# MinIO
+MINIO_ENDPOINT, MINIO_REGION, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+MINIO_BUCKET_PREFIX
+
+# التشفير
+ENCRYPTION_MASTER_KEY
+```
+
+### 17E.5. مراحل CI/CD Pipeline (GitLab)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  1. test              → mvn test (Testcontainers: PostgreSQL +     │
+│                         Keycloak + MinIO)                          │
+│  2. build             → Paketo Buildpacks (Java 25, Cloud-Native)  │
+│  3. deploy-staging    → نشر على VPS2 (Port 8083)                  │
+│                         + Health Check (/actuator/health)          │
+│  4. integration-test  → pytest (Business Logic + RBAC +            │
+│                         Tenant Isolation) ضد Staging               │
+│  5. contract-test     → Schemathesis (Property-Based API           │
+│                         Contract Testing من OpenAPI spec)          │
+│  6. promote           → GitLab Template Promotion                  │
+│  7. deploy-prod       → نشر يدوي على الإنتاج (Port 8080)          │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
